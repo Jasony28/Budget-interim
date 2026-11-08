@@ -2,7 +2,7 @@
 
 Appli web (PWA) pour gérer son budget d'intérimaire : missions, paies, charges fixes, dépenses, épargne et coussin de sécurité. Elle peut aussi scanner une fiche de paie avec Gemini.
 
-**L'appli :** https://jasony28.github.io/budget-interim/
+**L'appli :** https://jasony28.github.io/Budget-interim/
 
 - Connexion avec Google (Firebase Auth)
 - Données synchronisées entre appareils et disponibles hors ligne (Firestore)
