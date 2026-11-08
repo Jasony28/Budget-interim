@@ -1,11 +1,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import { firebaseConfig, recaptchaEnterpriseSiteKey, geminiModel } from "./firebase-config.js?v=7";
+import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=8";
 
-const APP_VERSION=7;
+const APP_VERSION=8;
 const CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
 const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],reglages:{epargne:0,pct:10,mois:3,ratio:78}};
 let S=JSON.parse(JSON.stringify(DEF));
@@ -349,7 +349,8 @@ function openRaw(h){$("sheet").innerHTML=h;$("sheetBg").classList.add("open")}
 let model=null, canImg=false, scanCtl=null, scanRes=null;
 function initAI(){
   try{
-    if(recaptchaEnterpriseSiteKey)initializeAppCheck(app,{provider:new ReCaptchaEnterpriseProvider(recaptchaEnterpriseSiteKey),isTokenAutoRefreshEnabled:true});
+    if(recaptchaV3SiteKey)initializeAppCheck(app,{provider:new ReCaptchaV3Provider(recaptchaV3SiteKey),isTokenAutoRefreshEnabled:true});
+    else if(recaptchaEnterpriseSiteKey)initializeAppCheck(app,{provider:new ReCaptchaEnterpriseProvider(recaptchaEnterpriseSiteKey),isTokenAutoRefreshEnabled:true});
     const ai=getAI(app,{backend:new GoogleAIBackend()});
     model=getGenerativeModel(ai,{model:geminiModel,generationConfig:{responseMimeType:"application/json",temperature:0}});
     canImg=true;
@@ -378,7 +379,7 @@ function parseJSON(t){
 }
 function aiErr(e){const m=(String(e&&e.code||"")+" "+String(e&&e.message||e||"")).toLowerCase().replace(/-/g," ");
   if(m.includes("api not enabled")||m.includes("ailogic")||m.includes("get started"))return "Gemini n'est pas encore activé : Console Firebase → AI Logic → « Commencer » → Gemini Developer API (voir README). Attends ensuite 2-3 minutes.";
-  if(m.includes("app check")||m.includes("appcheck")||m.includes("recaptcha"))return "Scan bloqué par App Check : ajoute ta clé reCAPTCHA Enterprise dans firebase-config.js (voir README).";
+  if(m.includes("app check")||m.includes("appcheck")||m.includes("recaptcha"))return (recaptchaV3SiteKey||recaptchaEnterpriseSiteKey)?"App Check refuse l'appli : vérifie que la clé secrète reCAPTCHA est bien enregistrée dans Firebase → App Check, et que le domaine jasony28.github.io est autorisé.":"Scan bloqué par App Check : il manque la clé reCAPTCHA dans l'appli (voir README).";
   if(m.includes("429")||m.includes("quota")||m.includes("resource_exhausted"))return "Limite gratuite atteinte pour le moment, réessaie plus tard.";
   if(m.includes("api has not been used")||m.includes("not enabled")||m.includes("permission"))return "Firebase AI Logic n'est pas activé sur ton projet (voir README).";
   if(m.includes("not found")&&m.includes("model"))return "Modèle Gemini introuvable : change geminiModel dans firebase-config.js.";

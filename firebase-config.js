@@ -10,9 +10,10 @@ export const firebaseConfig = {
   measurementId: "G-TGE32BV1TR"
 };
 
-// 🔐 App Check (obligatoire pour le scan Gemini) : clé de site reCAPTCHA Enterprise
-// Console Firebase → App Check → Applications → ton appli Web → reCAPTCHA Enterprise
-// Laisse vide "" si tu n'utilises pas le scan.
+// 🔐 App Check (protège ton quota Gemini) — remplis UNE des deux clés :
+// reCAPTCHA v3 (gratuit, recommandé) : clé de SITE créée sur https://www.google.com/recaptcha/admin
+export const recaptchaV3SiteKey = "";
+// ou reCAPTCHA Enterprise
 export const recaptchaEnterpriseSiteKey = "";
 
 // 🤖 Modèle Gemini utilisé pour lire les fiches de paie
