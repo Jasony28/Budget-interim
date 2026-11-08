@@ -3,7 +3,7 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import { firebaseConfig, recaptchaEnterpriseSiteKey, geminiModel } from "./firebase-config.js";
+import { firebaseConfig, recaptchaEnterpriseSiteKey, geminiModel } from "./firebase-config.js?v=6";
 
 const CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
 const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],reglages:{epargne:0,pct:10,mois:3,ratio:78}};
@@ -79,7 +79,7 @@ $("bLogin").onclick=async()=>{
 };
 document.addEventListener("click",e=>{if(e.target.id==="bRedirect")loginRedirect()});
 $("bLogout").onclick=()=>signOut(auth);
-if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+if("serviceWorker" in navigator){const had=!!navigator.serviceWorker.controller;window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").then(r=>r.update()).catch(()=>{}));navigator.serviceWorker.addEventListener("controllerchange",()=>{if(had&&!window.__reloaded){window.__reloaded=1;location.reload()}})}
 
 /* ---------- calculs ---------- */
 const fixesTotal=()=>S.fixes.reduce((a,f)=>a+(+f.montant||0),0);
