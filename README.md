@@ -18,6 +18,14 @@ Appli web (PWA) pour gérer son budget d'intérimaire : missions, paies, charges
 - 🔔 Alertes : fin de mission, paie en retard, budget dépassé, épargne à faire
 - 📤 Export CSV (Excel / déclaration d'impôts) + sauvegarde JSON
 - ✏️ Tout est modifiable : touche une ligne pour l'éditer
+- 🎁 Prime de fin d'année (65 j / 494 h, 8,33 %) et 🏖️ pécule de vacances (ONVA) estimés
+- 🗓️ Calendrier des missions + pointage des heures (jours fériés belges), contrôle automatique des fiches de paie
+- 🍽️ Chèques-repas : solde et dates d'expiration
+- 🤖 Assistant IA : « Analyse mon mois » + questions libres sur ton budget
+- 🧾 Plusieurs tickets d'un coup, 🏦 import de relevé bancaire (capture ou PDF)
+- 🔮 Prévision du mois prochain, courbe d'épargne, camembert, comparaison avec l'an dernier
+- 🤝 Dettes & prêts, 💪 défi 52 semaines, catégories personnalisées
+- 🔒 Code PIN, 🙈 mode discret, 🔔 rappels (factures, fins de mission, prélèvements), raccourcis sur l'icône
 - 🖼️ Photos et PDF des factures et fiches de paie gardés et consultables (galerie, appareil photo ou fichier)
 
 **Technique**

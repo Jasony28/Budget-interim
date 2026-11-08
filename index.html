@@ -97,6 +97,33 @@ nav button.on{color:var(--acc);background:var(--card)}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--mut);border-top-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-3px;margin-right:8px}
 @keyframes sp{to{transform:rotate(360deg)}}
 [hidden]{display:none!important}
+#lock{position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;align-items:center;justify-content:center;padding:24px}
+#lock[hidden]{display:none!important}
+.pinpad{display:grid;grid-template-columns:repeat(3,72px);gap:14px;justify-content:center;margin-top:16px}
+.pinpad button{height:72px;border-radius:50%;border:0;background:var(--card2);color:var(--txt);font-size:26px;font-weight:700;font-family:inherit;cursor:pointer}
+.pinpad button:active{background:var(--acc)}
+body.discret .v,body.discret .amt,body.discret .cat b,body.discret .mt td:not(:first-child),body.discret #parJour,body.discret .obj .sub span{filter:blur(9px)}
+.ai-out{background:var(--card2);border-radius:12px;padding:12px;margin-top:12px;font-size:14px;line-height:1.5;white-space:pre-wrap}
+.msg{padding:9px 12px;border-radius:14px;margin-top:8px;font-size:14px;line-height:1.45;max-width:88%;white-space:pre-wrap}
+.msg.me{background:var(--acc);color:#fff;margin-left:auto;border-bottom-right-radius:4px}
+.msg.ai{background:var(--card2);border-bottom-left-radius:4px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.cal .h{font-size:11px;color:var(--mut);font-weight:700;padding-bottom:4px}
+.cal .d{aspect-ratio:1;border-radius:10px;background:var(--card2);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer;position:relative}
+.cal .d small{font-size:9px;font-weight:600;color:#fff;opacity:.9}
+.cal .d.mis{background:#2a1215}
+.cal .d.w{background:var(--acc);color:#fff}
+.cal .d.today{outline:2px solid #fff}
+.cal .d.off{opacity:.25;cursor:default}
+.cal .d.fer::after{content:"";position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.defi{display:grid;grid-template-columns:repeat(8,1fr);gap:4px}
+.defi button{aspect-ratio:1;border:0;border-radius:8px;background:var(--card2);color:var(--mut);font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;padding:0}
+.defi button.on{background:var(--acc);color:#fff}
+.chk-row{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.chk-row input[type=checkbox]{width:20px;height:20px;flex:none}
+.chk-row .l{flex:1;min-width:0}.chk-row .l b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chk-row .l small{color:var(--mut);font-size:12px}
+.warnbox{background:#2a1a05;border:1px solid var(--warn);color:#fde68a;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:10px}
+.okbox{background:#052e16;border:1px solid var(--pos);color:#bbf7d0;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:10px}
 #updBanner{position:sticky;top:0;z-index:6;background:var(--acc);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px}
 .updBtn.spin-it{animation:sp 1s linear infinite}
 #viewer{position:fixed;inset:0;background:#000;z-index:40;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
@@ -137,10 +164,14 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <p class="sub" id="loginErr" style="margin-top:14px;color:var(--bad)"></p>
   </div>
 </div>
+<div id="lock" hidden><div class="login-box" style="max-width:300px;margin:auto;text-align:center">
+  <div style="font-size:44px">🔒</div><h1 style="margin:10px 0 16px">Budget <span>Intérim</span></h1>
+  <div id="pinDots" style="font-size:30px;letter-spacing:12px;height:40px">○○○○</div>
+  <div id="pinPad" class="pinpad"></div><p class="sub" id="pinMsg" style="color:var(--bad);height:20px"></p></div></div>
 <div id="updBanner" hidden><span>✨ Nouvelle version disponible</span><button class="btn sm updBtn" style="background:#fff;color:var(--acc)">Mettre à jour</button></div>
 <header>
   <h1>Budget <span>Intérim</span></h1>
-  <div style="display:flex;align-items:center;gap:8px"><div class="sync" id="sync">Chargement…</div><button class="ib updBtn" title="Mettre à jour l'appli" aria-label="Mettre à jour" style="width:34px;height:34px;font-size:16px">↻</button></div>
+  <div style="display:flex;align-items:center;gap:8px"><div class="sync" id="sync">Chargement…</div><button class="ib" id="bDiscret" title="Masquer les montants" aria-label="Mode discret" style="width:34px;height:34px;font-size:15px">👁</button><button class="ib updBtn" title="Mettre à jour l'appli" aria-label="Mettre à jour" style="width:34px;height:34px;font-size:16px">↻</button><button class="ib" data-v="set" title="Réglages" aria-label="Réglages" style="width:34px;height:34px;font-size:16px">⚙</button></div>
 </header>
 
 <main>
@@ -172,6 +203,11 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 
     <div id="alerts"></div>
 
+    <div class="card" id="weekCard" hidden>
+      <div class="k">📅 Ta semaine</div>
+      <div id="weekBody"></div>
+    </div>
+
     <div class="card">
       <div class="k">Coussin de sécurité</div>
       <div class="v" id="coussin">—</div>
@@ -191,6 +227,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 
     <div class="card" id="catCard">
       <div class="k">Dépenses par catégorie</div>
+      <div id="donut"></div>
       <div id="cats"></div>
     </div>
   </section>
@@ -218,6 +255,45 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <div class="card" id="depenses"></div>
   </section>
 
+  <!-- OUTILS -->
+  <section class="view" id="v-outils">
+    <h2>🤖 Assistant budget</h2>
+    <div class="card">
+      <button class="btn" id="bConseil">✨ Analyse mon mois</button>
+      <div id="conseilOut" class="ai-out" hidden></div>
+      <div class="k" style="margin-top:14px">Pose une question sur ton argent</div>
+      <div id="chatLog"></div>
+      <form id="fChat" style="display:flex;gap:8px;margin-top:8px"><input id="chatIn" placeholder="ex. Combien en resto depuis septembre ?" autocomplete="off" style="flex:1"><button class="btn sm" style="width:auto">➤</button></form>
+      <div class="chips" style="margin-top:8px" id="chatSugg"></div>
+    </div>
+    <div class="two">
+      <button class="btn sec" id="bMulti">🧾 Plusieurs tickets</button>
+      <button class="btn sec" id="bReleve">🏦 Relevé bancaire</button>
+    </div>
+
+    <h2>🗓️ Calendrier & pointage</h2>
+    <div class="card">
+      <div id="calendar"></div>
+      <div class="sub" id="calSub" style="margin-top:8px"></div>
+      <button class="btn sec sm" data-open="pointage" style="margin-top:10px">+ Pointer des heures</button>
+    </div>
+
+    <h2>🎁 Prime de fin d'année</h2>
+    <div class="card" id="primeCard"></div>
+
+    <h2>🏖️ Pécule de vacances</h2>
+    <div class="card" id="peculeCard"></div>
+
+    <h2 style="display:flex;justify-content:space-between;align-items:center">🍽️ Chèques-repas <button class="btn sec sm" data-open="cheques">+ Ajouter</button></h2>
+    <div class="card" id="crCard"></div>
+
+    <h2 style="display:flex;justify-content:space-between;align-items:center">🤝 Dettes & prêts <button class="btn sec sm" data-open="dette">+ Ajouter</button></h2>
+    <div class="card" id="dettes"></div>
+
+    <h2>💪 Défi 52 semaines</h2>
+    <div class="card" id="defi"></div>
+  </section>
+
   <!-- STATS -->
   <section class="view" id="v-stats">
     <div class="grid">
@@ -226,6 +302,17 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <div class="card"><div class="k">Net par heure</div><div class="v pos" id="yNetH">—</div><div class="sub">moyenne réelle</div></div>
       <div class="card"><div class="k">Dépensé</div><div class="v out" id="yDep">0 €</div><div class="sub" id="yDepSub"></div></div>
       <div class="card"><div class="k">Épargné</div><div class="v" id="yEp">0 €</div><div class="sub" id="yEpSub"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="k">🔮 Prévision du mois prochain</div>
+      <div class="v" id="prevNet">—</div>
+      <div class="sub" id="prevSub"></div>
+    </div>
+
+    <div class="card">
+      <div class="k">Évolution de ton épargne</div>
+      <div id="epCurve"></div>
     </div>
 
     <div class="card">
@@ -266,12 +353,24 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
         <label>Mettre de côté sur chaque paie (%)<input type="number" step="1" inputmode="numeric" id="sPct"></label>
         <label>Coussin visé (mois de charges)<input type="number" step="1" inputmode="numeric" id="sMois"></label>
         <label>Ratio net / brut estimé (%)<input type="number" step="1" inputmode="numeric" id="sRatio"></label>
+        <label>Statut d'intérimaire<select id="sStatut"><option value="ouvrier">Ouvrier</option><option value="employe">Employé</option></select></label>
         <button class="btn">Enregistrer</button>
       </form>
     </div>
+    <h2>Catégories</h2>
+    <div class="card"><div class="chips" id="catList"></div>
+      <form id="fCat" style="display:flex;gap:8px;margin-top:10px"><input id="catNew" placeholder="Nouvelle catégorie (ex. 🐶 Chien)" style="flex:1"><button class="btn sm" style="width:auto">Ajouter</button></form>
+      <p class="sub" style="margin-top:8px">Touche une catégorie pour la supprimer.</p></div>
+    <h2>Sécurité & rappels</h2>
+    <div class="card">
+      <button class="btn sec" id="bPin">🔒 Code PIN</button>
+      <p class="sub" id="pinState" style="margin:6px 0 12px"></p>
+      <button class="btn sec" id="bNotif">🔔 Activer les rappels</button>
+      <p class="sub" id="notifState" style="margin-top:6px"></p>
+    </div>
     <h2>Sauvegarde</h2>
     <div class="card">
-      <p class="sub" style="margin-bottom:10px">Copie tes données pour les garder ailleurs, ou colle une sauvegarde pour la restaurer.</p>
+      <p class="sub" style="margin-bottom:10px">Tes données sont déjà synchronisées dans ton compte. Tu peux aussi garder une copie : <span id="lastBackup"></span></p>
       <textarea id="backup" placeholder="Colle une sauvegarde ici…"></textarea>
       <div class="two" style="margin-top:10px">
         <button class="btn sec" id="bCopy">Copier</button>
@@ -284,7 +383,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 9</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 10</p>
     </div>
   </section>
 </main>
@@ -295,8 +394,8 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
   <button class="on" data-v="home"><span class="ic">◉</span>Accueil</button>
   <button data-v="rev"><span class="ic">€</span>Paies</button>
   <button data-v="dep"><span class="ic">↓</span>Dépenses</button>
+  <button data-v="outils"><span class="ic">✦</span>Outils</button>
   <button data-v="stats"><span class="ic">▤</span>Stats</button>
-  <button data-v="set"><span class="ic">⚙</span>Réglages</button>
 </nav>
 
 <div class="sheet-bg" id="sheetBg">
@@ -306,6 +405,6 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=9"></script>
+<script type="module" src="app.js?v=10"></script>
 </body>
 </html>

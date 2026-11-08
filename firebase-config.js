@@ -12,9 +12,9 @@ export const firebaseConfig = {
 
 // 🔐 App Check (protège ton quota Gemini) — remplis UNE des deux clés :
 // reCAPTCHA v3 (gratuit, recommandé) : clé de SITE créée sur https://www.google.com/recaptcha/admin
-export const recaptchaV3SiteKey = "6LeX-RYuAAAAAJFxD3d2GAmRK2ccNFsDRJFo1aLz";
+export const recaptchaV3SiteKey = "";
 // ou reCAPTCHA Enterprise
-export const recaptchaEnterpriseSiteKey = "";
+export const recaptchaEnterpriseSiteKey = "6LeX-RYuAAAAAJFxD3d2GAmRK2ccNFsDRJFo1aLz";
 
 // 🤖 Modèle Gemini utilisé pour lire les fiches de paie
 export const geminiModel = "gemini-3.5-flash";
