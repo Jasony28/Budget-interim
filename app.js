@@ -6,7 +6,7 @@ import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.
 import { firebaseConfig, recaptchaEnterpriseSiteKey, geminiModel } from "./firebase-config.js";
 
 const CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
-const DEF={missions:[],paies:[],depenses:[],fixes:[],reglages:{epargne:0,pct:10,mois:3,ratio:78}};
+const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],reglages:{epargne:0,pct:10,mois:3,ratio:78}};
 let S=JSON.parse(JSON.stringify(DEF));
 let cur=new Date();cur.setDate(1);
 const $=id=>document.getElementById(id);
@@ -20,7 +20,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 function toast(t){const e=$("toast");e.textContent=t;e.classList.add("on");setTimeout(()=>e.classList.remove("on"),1800)}
 
 /* ---------- stockage : Firebase ---------- */
-function normalize(d){d=d||{};return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
+function normalize(d){d=d||{};return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
 const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
@@ -93,12 +93,28 @@ function monthData(k){
 }
 function missionPaid(m){return S.paies.filter(p=>p.mission===m.id&&p.recu).reduce((a,p)=>a+(+p.montant||0),0)}
 function daysTo(s){return Math.ceil((new Date(s+"T23:59")-new Date())/864e5)}
+const sum=(a,f)=>a.reduce((t,x)=>t+(+f(x)||0),0);
+function netHoraire(){
+  const p=S.paies.filter(x=>+x.heures>0&&+x.montant>0);
+  const h=sum(p,x=>x.heures);
+  if(h>=8)return{v:sum(p,x=>x.montant)/h,src:"réel"};
+  const t=S.missions.filter(m=>+m.taux>0);
+  if(t.length)return{v:sum(t,m=>m.taux)/t.length*S.reglages.ratio/100,src:"estimé"};
+  return null;
+}
+function avgVar(n=3){
+  const vals=[];for(let i=1;i<=n;i++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const k=mkey(d);if(S.depenses.some(x=>(x.date||"").startsWith(k)))vals.push(monthData(k).var_)}
+  if(!vals.length)return monthData(mkey(new Date())).var_;
+  return vals.reduce((a,b)=>a+b,0)/vals.length;
+}
+function moisPour(o){if(!o.echeance)return null;const d=new Date(o.echeance+"T12:00"),n=new Date();const m=Math.max(1,(d.getFullYear()-n.getFullYear())*12+d.getMonth()-n.getMonth());return Math.max(0,(+o.cible-(+o.actuel||0)))/m}
 
 /* ---------- rendu ---------- */
+const row=(edit,left,right)=>`<div class="row"><div class="l" data-edit="${edit}">${left}</div><div style="display:flex;align-items:center;gap:2px">${right}</div></div>`;
 function render(){
-  const k=mkey(cur);
+  const k=mkey(cur), t=today(), isNow=k===mkey(new Date());
   $("mlabel").textContent=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
-  const M=monthData(k), R=S.reglages;
+  const M=monthData(k), R=S.reglages, fx=fixesTotal();
   const reste=M.recu+M.att-M.dep;
   $("reste").textContent=eur(reste);
   $("resteCard").classList.toggle("neg",reste<0);
@@ -108,89 +124,189 @@ function render(){
   $("dep").textContent=eur(M.dep);
   $("depSub").textContent=`${eur(M.fix)} fixes · ${eur(M.var_)} variables`;
 
+  // budget par jour
+  $("jourCard").hidden=!isNow||(M.recu+M.att===0&&M.dep===0);
+  if(isNow){const n=new Date(),dim=new Date(n.getFullYear(),n.getMonth()+1,0).getDate(),left=dim-n.getDate()+1;
+    const pj=reste/left;$("parJour").textContent=eur(pj)+" / jour";$("parJour").className="v "+(pj<0?"out":pj<10?"pend":"pos");
+    $("jourSub").innerHTML=`${left} jour${left>1?"s":""}<br>restant${left>1?"s":""}`;$("moisBar").style.width=((n.getDate()-1)/dim*100)+"%"}
+
   // alertes
-  const A=[];const t=today();
+  const A=[];
   const active=S.missions.filter(m=>(!m.debut||m.debut<=t)&&(!m.fin||m.fin>=t));
-  if(!S.missions.length) A.push(["","Ajoute ta première mission","Onglet Paies → nouvelle mission, puis enregistre chaque paie reçue."]);
-  else if(!active.length) A.push(["bad","Pas de mission en cours",`Avec tes charges fixes de ${eur(fixesTotal())}/mois, ton épargne tient ${fixesTotal()?(R.epargne/fixesTotal()).toFixed(1):"∞"} mois.`]);
+  if(!S.missions.length) A.push(["","Ajoute ta première mission","Onglet Paies → nouvelle mission, ou scanne directement une fiche de paie 📷."]);
+  else if(!active.length) A.push(["bad","Pas de mission en cours",`Avec tes charges fixes de ${eur(fx)}/mois, ton épargne tient ${fx?(R.epargne/fx).toLocaleString("fr-BE",{maximumFractionDigits:1}):"∞"} mois.`]);
   active.forEach(m=>{if(m.fin){const n=daysTo(m.fin);if(n<=14)A.push([n<=5?"bad":"","Fin de mission "+(n<=0?"aujourd'hui":"dans "+n+" j"),`${esc(m.client||m.agence)} se termine le ${fmtD(m.fin)}. Pense à relancer ton agence.`])}
-    else A.push(["ok","Mission en cours",`${esc(m.client||m.agence)} · ${m.taux?eur2(m.taux)+"/h brut":""}`])});
-  const aside=(M.recu*R.pct/100);
-  if(M.recu>0&&R.pct>0) A.push(["ok",`Mets ${eur(aside)} de côté`,`${R.pct}% de tes paies reçues ce mois, pour lisser les périodes sans mission.`]);
-  $("alerts").innerHTML=A.map(a=>`<div class="card alert ${a[0]}"><div><div class="t">${a[1]}</div><p>${a[2]}</p></div></div>`).join("");
+    else A.push(["ok","Mission en cours",`${esc(m.client||m.agence)}${m.taux?" · "+eur2(m.taux)+"/h brut":""}`])});
+  const att=S.paies.filter(p=>!p.recu&&p.date<t);
+  if(att.length)A.push(["",`${att.length} paie${att.length>1?"s":""} en retard`,`${eur(sum(att,p=>p.montant))} attendus depuis le ${fmtD(att.map(p=>p.date).sort()[0])}. Vérifie ton compte ou relance l'agence.`]);
+  Object.entries(S.budgets).forEach(([c,lim])=>{if(!(+lim>0))return;const sp=sum(M.d.filter(x=>x.cat===c),x=>x.montant);const p=sp/lim;
+    if(p>=1)A.push(["bad",`Budget ${c} dépassé`,`${eur(sp)} dépensés pour ${eur(lim)} prévus (+${eur(sp-lim)}).`]);
+    else if(p>=.85)A.push(["",`Budget ${c} presque atteint`,`${eur(sp)} sur ${eur(lim)} — il reste ${eur(lim-sp)}.`])});
+  const deja=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)&&x.montant>0),x=>x.montant);
+  const aside=Math.max(0,M.recu*R.pct/100-deja);
+  if(aside>=1&&R.pct>0) A.push(["ok",`Mets ${eur(aside)} de côté`,`${R.pct}% de tes paies reçues ce mois, pour tenir pendant les périodes sans mission.`,`<button class="btn sm" data-open="epargne" data-amt="${aside.toFixed(2)}" style="margin-top:10px">C'est fait</button>`]);
+  $("alerts").innerHTML=A.map(a=>`<div class="card alert ${a[0]}"><div style="flex:1"><div class="t">${a[1]}</div><p>${a[2]}</p>${a[3]||""}</div></div>`).join("");
 
   // coussin
-  const fx=fixesTotal(), cible=fx*R.mois;
-  if(fx>0){const mo=R.epargne/fx;$("coussin").textContent=mo.toFixed(1)+" mois";
+  const cible=fx*R.mois;
+  if(fx>0){const mo=R.epargne/fx;$("coussin").textContent=mo.toLocaleString("fr-BE",{maximumFractionDigits:1})+" mois";
     $("coussinSub").textContent=`${eur(R.epargne)} d'épargne · objectif ${R.mois} mois = ${eur(cible)}`;
     $("coussinBar").style.width=Math.min(100,R.epargne/cible*100)+"%";
-    $("coussinBar").style.background=mo>=R.mois?"var(--acc)":mo>=1?"var(--warn)":"var(--bad)";}
-  else{$("coussin").textContent="—";$("coussinSub").textContent="Ajoute tes charges fixes pour calculer combien de mois tu tiens sans mission.";$("coussinBar").style.width="0"}
+    $("coussinBar").style.background=mo>=R.mois?"var(--pos)":mo>=1?"var(--warn)":"var(--bad)";}
+  else{$("coussin").textContent=eur(R.epargne);$("coussinSub").textContent="Ajoute tes charges fixes pour savoir combien de mois tu tiens sans mission.";$("coussinBar").style.width="0"}
+
+  // objectifs
+  $("objectifs").innerHTML=S.objectifs.length?S.objectifs.map(o=>{const p=Math.min(100,(+o.actuel||0)/(+o.cible||1)*100),mp=moisPour(o);
+    return `<div class="obj" data-edit="objectif:${o.id}"><div class="top"><b>${esc(o.emoji||"🎯")} ${esc(o.nom)}</b><span class="pct">${Math.round(p)} %</span></div>
+    <div class="bar"><i style="width:${p}%"></i></div>
+    <div class="top sub" style="margin-top:6px"><span>${eur(o.actuel||0)} / ${eur(o.cible)}</span><span>${p>=100?"🎉 Atteint !":mp!=null?eur(mp)+"/mois jusqu'au "+fmtD(o.echeance):""}</span></div>
+    ${p<100?`<button class="btn sec sm" data-open="epargne" data-target="${o.id}" style="margin-top:10px">+ Verser</button>`:""}</div>`}).join(""):`<div class="card empty">Un projet ? Voiture, permis, vacances… Crée un objectif et suis ta progression.</div>`;
 
   // graphique
   const ms=[];for(let i=5;i>=0;i--){const d=new Date(cur);d.setMonth(d.getMonth()-i);ms.push(d)}
-  const vals=ms.map(d=>{const x=monthData(mkey(d));return[x.recu+x.att,x.dep]});
+  const actif=k=>S.paies.some(p=>(p.date||"").startsWith(k))||S.depenses.some(p=>(p.date||"").startsWith(k));
+  const vals=ms.map(d=>{const kk=mkey(d),x=monthData(kk);return[x.recu+x.att,actif(kk)?x.dep:0]});
   const mx=Math.max(1,...vals.flat());
-  $("chart").innerHTML=ms.map((d,i)=>`<div class="c"><div class="bars"><i style="height:${vals[i][0]/mx*100}%;background:var(--acc)"></i><i style="height:${vals[i][1]/mx*100}%;background:var(--bad)"></i></div><small>${d.toLocaleDateString("fr-BE",{month:"short"}).replace(".","")}</small></div>`).join("");
+  $("chart").innerHTML=ms.map((d,i)=>`<div class="c"><div class="bars"><i style="height:${vals[i][0]/mx*100}%;background:#f4f4f5"></i><i style="height:${vals[i][1]/mx*100}%;background:var(--acc)"></i></div><small>${d.toLocaleDateString("fr-BE",{month:"short"}).replace(".","")}</small></div>`).join("");
+  const withRev=vals.filter(v=>v[0]>0);$("chartAvg").textContent=withRev.length?"moy. "+eur(sum(withRev,v=>v[0])/withRev.length):"";
 
   // catégories
   const c={};M.d.forEach(x=>c[x.cat]=(c[x.cat]||0)+(+x.montant||0));
   const ce=Object.entries(c).sort((a,b)=>b[1]-a[1]);
-  $("cats").innerHTML=ce.length?ce.map(([n,v])=>`<div class="cat"><span>${esc(n)}</span><b>${eur(v)}</b></div><div class="bar" style="margin-top:4px;height:6px"><i style="width:${v/ce[0][1]*100}%;background:var(--bad)"></i></div>`).join(""):`<div class="empty">Aucune dépense ce mois</div>`;
+  $("cats").innerHTML=ce.length?ce.map(([n,v])=>`<div class="cat"><span>${esc(n)}</span><b>${eur(v)} <small style="color:var(--mut);font-weight:600">${Math.round(v/M.var_*100)}%</small></b></div><div class="bar" style="margin-top:4px;height:6px"><i style="width:${v/ce[0][1]*100}%"></i></div>`).join(""):`<div class="empty">Aucune dépense ce mois</div>`;
 
   // missions
   const ms2=[...S.missions].sort((a,b)=>(b.debut||"").localeCompare(a.debut||""));
   $("missions").innerHTML=ms2.length?ms2.map(m=>{
     const on=(!m.debut||m.debut<=t)&&(!m.fin||m.fin>=t);
-    return `<div class="row"><div class="l"><b>${esc(m.client||"Mission")}${on?'<span class="pill g">en cours</span>':(m.debut>t?'<span class="pill y">à venir</span>':'')}</b>
-    <small>${esc(m.agence)} · ${fmtD(m.debut)}${m.fin?" → "+fmtD(m.fin):" → ?"}${m.taux?" · "+eur2(m.taux)+"/h":""}</small><br><small>Reçu : ${eur(missionPaid(m))}</small></div>
-    <div style="display:flex;gap:4px;align-items:center"><button class="btn sm" data-paie="${m.id}">+ Paie</button><button class="del" data-del="missions:${m.id}">×</button></div></div>`}).join(""):`<div class="empty">Aucune mission</div>`;
+    const h=sum(S.paies.filter(p=>p.mission===m.id),p=>p.heures);
+    return row("mission:"+m.id,`<b>${esc(m.client||"Mission")}${on?'<span class="pill g">en cours</span>':(m.debut>t?'<span class="pill y">à venir</span>':'')}</b>
+    <small>${esc(m.agence)} · ${fmtD(m.debut)}${m.fin?" → "+fmtD(m.fin):" → ?"}${m.taux?" · "+eur2(m.taux)+"/h":""}</small><br><small>Reçu : ${eur(missionPaid(m))}${h?" · "+h+" h":""}</small>`,
+    `<button class="btn sm" data-paie="${m.id}">+ Paie</button><button class="del" data-del="missions:${m.id}">×</button>`)}).join(""):`<div class="empty">Aucune mission</div>`;
 
   // paies
   const pm=[...M.p].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
-    return `<div class="row"><div class="l" ${p.detail?`data-detail="${p.id}" style="cursor:pointer"`:""}><b>${p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+p.heures+" h":""}${p.note&&m?" · "+esc(p.note):""}</small></div>
-    <div style="display:flex;align-items:center;gap:2px"><span class="amt ${p.recu?"pos":"pend"}" data-toggle="${p.id}" style="cursor:pointer">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button></div></div>`}).join("")+`<div class="sub" style="padding-top:8px">Touche un montant pour le marquer reçu / attendu.</div>`:`<div class="empty">Aucune paie ce mois</div>`;
+    return row("paie:"+p.id,`<b>${p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+p.heures+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
+    `<span class="amt ${p.recu?"pos":"pend"}" data-toggle="${p.id}" style="cursor:pointer">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`)}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:`<div class="empty">Aucune paie ce mois</div>`;
 
   // fixes
-  $("fixes").innerHTML=S.fixes.length?S.fixes.map(f=>`<div class="row"><div class="l"><b>${esc(f.nom)}</b></div><div style="display:flex;align-items:center"><span class="amt out">${eur2(f.montant)}</span><button class="del" data-del="fixes:${f.id}">×</button></div></div>`).join("")+`<div class="row"><div class="l"><b>Total</b></div><span class="amt">${eur2(fx)}</span></div>`:`<div class="empty">Loyer, assurance, téléphone, abonnements…</div>`;
+  $("fixes").innerHTML=S.fixes.length?S.fixes.map(f=>row("fixe:"+f.id,`<b>${esc(f.nom)}</b>${f.jour?`<small>le ${esc(f.jour)} du mois</small>`:""}`,`<span class="amt out">${eur2(f.montant)}</span><button class="del" data-del="fixes:${f.id}">×</button>`)).join("")+`<div class="row"><div class="l"><b>Total</b></div><span class="amt">${eur2(fx)}</span></div>`:`<div class="empty">Loyer, assurance, téléphone, abonnements…</div>`;
 
-  // dépenses
-  const dm=[...M.d].sort((a,b)=>b.date.localeCompare(a.date));
-  $("depenses").innerHTML=dm.length?dm.map(d=>`<div class="row"><div class="l"><b>${esc(d.note||d.cat)}</b><small>${fmtD(d.date)} · ${esc(d.cat)}</small></div><div style="display:flex;align-items:center"><span class="amt out">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button></div></div>`).join(""):`<div class="empty">Aucune dépense ce mois</div>`;
+  // budgets
+  const bl=Object.entries(S.budgets).filter(([,v])=>+v>0);
+  $("budgets").innerHTML=bl.length?bl.map(([cat,lim])=>{const sp=sum(M.d.filter(x=>x.cat===cat),x=>x.montant),p=sp/lim;
+    return `<div class="cat"><span>${esc(cat)}</span><b class="${p>=1?"out":""}">${eur(sp)} <small style="color:var(--mut);font-weight:600">/ ${eur(lim)}</small></b></div><div class="bar" style="margin-top:4px;height:6px"><i style="width:${Math.min(100,p*100)}%;background:${p>=1?"var(--bad)":p>=.85?"var(--warn)":"var(--pos)"}"></i></div>`}).join(""):`<div class="empty">Fixe un plafond par catégorie (courses, resto…) et l'appli te prévient avant de le dépasser.</div>`;
 
+  // dépenses (+ recherche)
+  const q=($("search").value||"").trim().toLowerCase();
+  const dl=q?S.depenses.filter(d=>(d.note+" "+d.cat+" "+d.montant).toLowerCase().includes(q)):M.d;
+  const dm=[...dl].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,q?100:500);
+  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${esc(d.note||d.cat)}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt out">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
+
+  renderStats();
   // réglages
   if(document.activeElement?.closest?.("#fSet")==null){$("sEpargne").value=R.epargne;$("sPct").value=R.pct;$("sMois").value=R.mois;$("sRatio").value=R.ratio}
 }
 
+function renderStats(){
+  const y=String(cur.getFullYear()), R=S.reglages;
+  const P=S.paies.filter(p=>(p.date||"").startsWith(y)), D=S.depenses.filter(d=>(d.date||"").startsWith(y));
+  const net=sum(P,p=>p.montant), h=sum(P,p=>p.heures), fx=fixesTotal();
+  const moisActifs=new Set([...P,...D].map(x=>x.date.slice(0,7)));
+  const nbM=Math.max(1,moisActifs.size);
+  $("yLabel").textContent="Net gagné en "+y;$("yNet").textContent=eur(net);
+  $("ySub").textContent=P.length?`${P.length} paie(s) · moy. ${eur(net/nbM)}/mois`:"Aucune paie cette année";
+  $("yHeures").textContent=h+" h";
+  const brutDet=P.filter(p=>p.detail&&p.detail.brut);$("yJours").textContent=brutDet.length?`brut scanné : ${eur(sum(brutDet,p=>p.detail.brut))}`:"";
+  $("yNetH").textContent=h?eur2(sum(P.filter(p=>+p.heures>0),p=>p.montant)/sum(P.filter(p=>+p.heures>0),p=>p.heures)):"—";
+  const dep=sum(D,d=>d.montant)+fx*moisActifs.size;
+  $("yDep").textContent=eur(dep);$("yDepSub").textContent=`dont ${eur(sum(D,d=>d.montant))} variables`;
+  const E=S.epargneLog.filter(x=>(x.date||"").startsWith(y));$("yEp").textContent=eur(sum(E,x=>x.montant));
+  $("yEpSub").textContent=net?`${Math.round(sum(E,x=>x.montant)/net*100)} % de tes revenus`:"";
+
+  // heures nécessaires
+  const nh=netHoraire(), besoin=fx+avgVar();
+  if(nh&&besoin>0){const hm=besoin/nh.v;$("hNeed").textContent=Math.ceil(hm)+" h / mois";
+    $("hNeedSub").textContent=`≈ ${Math.ceil(hm/4.33)} h par semaine, soit ${(hm/4.33/8).toLocaleString("fr-BE",{maximumFractionDigits:1})} jours de 8 h. Base : ${eur(besoin)} de dépenses mensuelles et ${eur2(nh.v)} net/h (${nh.src}).`}
+  else{$("hNeed").textContent="—";$("hNeedSub").textContent="Ajoute des paies avec heures (ou un taux de mission) et tes charges pour le calcul."}
+
+  // simulateur
+  const sT=$("simT");if(!sT.value&&!sT.dataset.touched){const m=[...S.missions].reverse().find(m=>+m.taux>0);if(m)sT.value=m.taux}
+  const sh=+$("simH").value||0, st=+sT.value||0, sw=+$("simW").value||0;
+  if(sh&&st&&sw){const brut=sh*st*sw, n=brut*R.ratio/100, perM=sh*st*4.33*R.ratio/100;
+    $("simRes").innerHTML=`Sur ${sw} semaine${sw>1?"s":""} : <b>${eur(n)}</b> net<br><small>${eur(brut)} brut × ${R.ratio} % · ≈ ${eur(perM)} net par mois · il te resterait ≈ ${eur(perM-besoin)} / mois après dépenses</small>`}
+  else $("simRes").textContent="Entre les heures et le taux pour estimer ce qu'une mission te rapporte.";
+
+  // par agence
+  const ag={};P.forEach(p=>{const m=S.missions.find(x=>x.id===p.mission);const n=m?(m.agence||"?"):"Sans mission";(ag[n]=ag[n]||{n:0,h:0,c:0});ag[n].n+=+p.montant||0;ag[n].h+=+p.heures||0;ag[n].c++});
+  const al=Object.entries(ag).sort((a,b)=>b[1].n-a[1].n);
+  $("parAgence").innerHTML=al.length?al.map(([n,v])=>`<div class="cat"><span>${esc(n)} <small style="color:var(--mut)">· ${v.c} paie(s)${v.h?" · "+v.h+" h":""}</small></span><b>${eur(v.n)}</b></div><div class="bar" style="margin-top:4px;height:6px"><i style="width:${v.n/al[0][1].n*100}%"></i></div>`).join(""):`<div class="empty">Aucune paie en ${y}</div>`;
+
+  // mois par mois
+  const nowK=mkey(new Date());let rows="";const first=[...moisActifs].sort()[0]||nowK;
+  for(let i=0;i<12;i++){const k=y+"-"+String(i+1).padStart(2,"0");const x=monthData(k);const act=moisActifs.has(k);if(!act&&(k>nowK||k<first))continue;
+    const rev=x.recu+x.att, dd=act?x.dep:0;
+    rows+=`<tr class="${k===nowK?"cur":""}"><td>${new Date(k+"-15").toLocaleDateString("fr-BE",{month:"short"})}</td><td>${rev?eur(rev):"—"}</td><td>${dd?eur(dd):"—"}</td><td class="${rev-dd<0?"out":rev-dd>0?"pos":""}">${rev||dd?eur(rev-dd):"—"}</td></tr>`}
+  $("parMois").innerHTML=rows?`<table class="mt"><tr><th>Mois</th><th>Revenus</th><th>Dépenses</th><th>Solde</th></tr>${rows}</table>`:`<div class="empty">Rien en ${y}</div>`;
+}
+
 /* ---------- formulaires ---------- */
-function openSheet(type,ctx){
-  const missOpts=S.missions.map(m=>`<option value="${m.id}" ${ctx===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("");
+const COLL={depense:"depenses",paie:"paies",mission:"missions",fixe:"fixes",objectif:"objectifs"};
+const EMOJIS=["🎯","🚗","🏖️","🏠","📱","🎓","💍","🎮","🛠️","🐶"];
+function openSheet(type,ctx,item,opts={}){
+  const it=item||{}, ed=!!item, V=(k,d="")=>esc(it[k]??d);
+  const head=(t)=>`<h3>${t} <button class="del" type="button" data-close>×</button></h3>`;
+  const delBtn=ed?`<button type="button" class="btn danger" data-del2="${COLL[type]}:${it.id}" style="margin-top:4px">Supprimer</button>`:"";
+  const missOpts=S.missions.map(m=>`<option value="${m.id}" ${(it.mission||ctx)===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("");
+  const lastCat=S.depenses.length?S.depenses[S.depenses.length-1].cat:CATS[0];
   const H={
-   depense:`<h3>Nouvelle dépense <button class="del" data-close>×</button></h3>
-    <form data-f="depense"><label>Montant (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required autofocus></label>
-    <label>Catégorie<select name="cat">${CATS.map(c=>`<option>${c}</option>`).join("")}</select></label>
-    <div class="two"><label>Date<input name="date" type="date" value="${today()}" required></label><label>Note<input name="note" placeholder="optionnel"></label></div>
-    <button class="btn">Ajouter</button></form>`,
-   paie:`<h3>Nouvelle paie <button class="del" data-close>×</button></h3>
-    <form data-f="paie">${S.missions.length?`<label>Mission<select name="mission" id="pMis"><option value="">— Aucune —</option>${missOpts}</select></label>`:""}
-    <div class="two"><label>Heures prestées<input name="heures" id="pH" type="number" step="0.25" inputmode="decimal" placeholder="ex. 38"></label><label>Date<input name="date" type="date" value="${today()}" required></label></div>
+   depense:`${head(ed?"Modifier la dépense":"Nouvelle dépense")}
+    <form data-f="depense" data-id="${V("id")}"><label>Montant (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${V("montant")}"></label>
+    <label>Catégorie</label><div class="chips" id="catChips">${CATS.map(c=>`<button type="button" class="${(it.cat||lastCat)===c?"on":""}" data-cat="${c}">${c}</button>`).join("")}</div>
+    <input type="hidden" name="cat" id="catIn" value="${esc(it.cat||lastCat)}">
+    <div class="two"><label>Date<input name="date" type="date" value="${V("date",today())}" required></label><label>Note<input name="note" placeholder="ex. Delhaize" value="${V("note")}" list="notesList"></label></div>
+    <datalist id="notesList">${[...new Set(S.depenses.map(d=>d.note).filter(Boolean))].slice(-30).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+    <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
+   paie:`${head(ed?"Modifier la paie":"Nouvelle paie")}
+    <form data-f="paie" data-id="${V("id")}">${S.missions.length?`<label>Mission<select name="mission" id="pMis"><option value="">— Aucune —</option>${missOpts}</select></label>`:""}
+    <div class="two"><label>Heures prestées<input name="heures" id="pH" type="number" step="0.25" inputmode="decimal" placeholder="ex. 38" value="${V("heures")}"></label><label>Date<input name="date" type="date" value="${V("date",today())}" required></label></div>
     <div class="est" id="pEst">Indique les heures pour une estimation du net.</div>
-    <label>Montant net (€)<input name="montant" id="pM" type="number" step="0.01" inputmode="decimal" required></label>
-    <label>Note<input name="note" placeholder="ex. semaine 45"></label>
-    <label class="chk"><input type="checkbox" name="recu" checked> Déjà reçue sur mon compte</label>
-    <button class="btn">Ajouter</button></form>`,
-   mission:`<h3>Nouvelle mission <button class="del" data-close>×</button></h3>
-    <form data-f="mission"><div class="two"><label>Agence<input name="agence" required placeholder="ex. Randstad"></label><label>Client / poste<input name="client" placeholder="ex. Magasinier"></label></div>
-    <div class="two"><label>Début<input name="debut" type="date" value="${today()}"></label><label>Fin prévue<input name="fin" type="date"></label></div>
-    <label>Taux horaire brut (€)<input name="taux" type="number" step="0.01" inputmode="decimal"></label>
-    <button class="btn">Ajouter</button></form>`,
-   fixe:`<h3>Charge fixe mensuelle <button class="del" data-close>×</button></h3>
-    <form data-f="fixe"><label>Nom<input name="nom" required placeholder="ex. Loyer"></label>
-    <label>Montant par mois (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required></label>
-    <button class="btn">Ajouter</button></form>`,
-   choix:`<h3>Ajouter <button class="del" data-close>×</button></h3>
-    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn" data-open="depense">Une dépense</button><button class="btn sec" data-open="paie">Une paie reçue</button><button class="btn sec" data-open="mission">Une mission</button><button class="btn sec" data-open="fixe">Une charge fixe</button></div>`
+    <label>Montant net (€)<input name="montant" id="pM" type="number" step="0.01" inputmode="decimal" required value="${V("montant")}" ${ed?'data-touched="1"':""}></label>
+    <label>Note<input name="note" placeholder="ex. semaine 45" value="${V("note")}"></label>
+    <label class="chk"><input type="checkbox" name="recu" ${!ed||it.recu?"checked":""}> Déjà reçue sur mon compte</label>
+    ${it.detail?`<button type="button" class="btn sec" data-detail="${it.id}">📄 Voir le détail de la fiche</button>`:""}
+    <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
+   mission:`${head(ed?"Modifier la mission":"Nouvelle mission")}
+    <form data-f="mission" data-id="${V("id")}"><div class="two"><label>Agence<input name="agence" required placeholder="ex. ASAP" value="${V("agence")}" list="agList"></label><label>Client / poste<input name="client" placeholder="ex. Magasinier" value="${V("client")}"></label></div>
+    <datalist id="agList">${[...new Set(S.missions.map(m=>m.agence).filter(Boolean))].map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+    <div class="two"><label>Début<input name="debut" type="date" value="${V("debut",today())}"></label><label>Fin prévue<input name="fin" type="date" value="${V("fin")}"></label></div>
+    <label>Taux horaire brut (€)<input name="taux" type="number" step="0.0001" inputmode="decimal" value="${V("taux")}"></label>
+    <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
+   fixe:`${head(ed?"Modifier la charge":"Charge fixe mensuelle")}
+    <form data-f="fixe" data-id="${V("id")}"><label>Nom<input name="nom" required placeholder="ex. Loyer" value="${V("nom")}"></label>
+    <div class="two"><label>Montant par mois (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${V("montant")}"></label><label>Jour du prélèvement<input name="jour" type="number" min="1" max="31" inputmode="numeric" placeholder="ex. 5" value="${V("jour")}"></label></div>
+    <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
+   objectif:`${head(ed?"Modifier l'objectif":"Nouvel objectif")}
+    <form data-f="objectif" data-id="${V("id")}"><div class="chips" id="emoChips">${EMOJIS.map(e=>`<button type="button" class="${(it.emoji||"🎯")===e?"on":""}" data-emo="${e}">${e}</button>`).join("")}</div>
+    <input type="hidden" name="emoji" id="emoIn" value="${esc(it.emoji||"🎯")}">
+    <label>Nom<input name="nom" required placeholder="ex. Permis de conduire" value="${V("nom")}"></label>
+    <div class="two"><label>Montant visé (€)<input name="cible" type="number" step="0.01" inputmode="decimal" required value="${V("cible")}"></label><label>Déjà de côté (€)<input name="actuel" type="number" step="0.01" inputmode="decimal" value="${V("actuel",0)}"></label></div>
+    <label>Pour quand ? (facultatif)<input name="echeance" type="date" value="${V("echeance")}"></label>
+    <button class="btn">${ed?"Enregistrer":"Créer l'objectif"}</button>${delBtn}</form>`,
+   epargne:`${head(opts.retrait?"Retirer de l'épargne":"Mettre de côté")}
+    <form data-f="epargne" data-sign="${opts.retrait?-1:1}"><label>Montant (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${esc(opts.amt||"")}"></label>
+    <label>${opts.retrait?"Depuis":"Vers"}<select name="target"><option value="">🛟 Coussin de sécurité (${eur(S.reglages.epargne)})</option>${S.objectifs.map(o=>`<option value="${o.id}" ${opts.target===o.id?"selected":""}>${esc(o.emoji||"🎯")} ${esc(o.nom)} (${eur(o.actuel||0)})</option>`).join("")}</select></label>
+    <div class="two"><label>Date<input name="date" type="date" value="${today()}" required></label><label>Note<input name="note" placeholder="facultatif"></label></div>
+    <button class="btn">${opts.retrait?"Retirer":"Épargner"}</button>
+    ${S.epargneLog.length?`<div class="k" style="margin-top:8px">Derniers mouvements</div>${[...S.epargneLog].reverse().slice(0,6).map(x=>{const o=S.objectifs.find(o=>o.id===x.target);return `<div class="ln"><span>${fmtD(x.date)} · ${o?esc(o.nom):"Coussin"}${x.note?" · "+esc(x.note):""}</span><b class="${x.montant<0?"out":"pos"}">${x.montant>0?"+":""}${eur2(x.montant)}</b></div>`}).join("")}`:""}</form>`,
+   budgets:`${head("Budgets par catégorie")}
+    <form data-f="budgets"><p class="sub">Plafond mensuel par catégorie. Laisse vide pour ne pas suivre.</p>
+    ${CATS.map(c=>{const avg=(()=>{let t=0,n=0;for(let i=1;i<=3;i++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const x=sum(S.depenses.filter(e=>e.cat===c&&e.date.startsWith(mkey(d))),e=>e.montant);if(x){t+=x;n++}}return n?t/n:0})();
+      return `<label style="grid-template-columns:1fr 120px;align-items:center;display:grid">${c}${avg?` <small style="font-weight:400">moy. ${eur(avg)}</small>`:""}<input name="b_${c}" type="number" step="1" inputmode="numeric" value="${esc(S.budgets[c]||"")}" placeholder="—"></label>`}).join("")}
+    <button class="btn">Enregistrer</button></form>`,
+   choix:`${head("Ajouter")}
+    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn" data-open="depense">💸 Une dépense</button><button class="btn sec" data-open="paie">💶 Une paie reçue</button><button class="btn sec" data-open="mission">🏭 Une mission</button><button class="btn sec" data-open="fixe">🔁 Une charge fixe</button><button class="btn sec" data-open="epargne">🛟 Mettre de côté</button><button class="btn sec" data-open="objectif">🎯 Un objectif</button></div>`
   };
   $("sheet").innerHTML=H[type];$("sheetBg").classList.add("open");
   if(type==="paie"){
@@ -199,7 +315,7 @@ function openSheet(type,ctx){
       else $("pEst").textContent=m&&!m.taux?"Ajoute un taux horaire à la mission pour estimer le net.":"Choisis une mission et indique les heures pour une estimation du net."};
     $("pH").oninput=upd;if($("pMis"))$("pMis").onchange=upd;$("pM").oninput=()=>$("pM").dataset.touched=1;upd();
   }
-  setTimeout(()=>$("sheet").querySelector("input")?.focus(),80);
+  if(!ed)setTimeout(()=>$("sheet").querySelector("input:not([type=hidden])")?.focus(),80);
 }
 function closeSheet(){$("sheetBg").classList.remove("open");if(scanCtl){scanCtl.abort();scanCtl=null}}
 function openRaw(h){$("sheet").innerHTML=h;$("sheetBg").classList.add("open")}
@@ -235,7 +351,8 @@ function parseJSON(t){
   if(i>=0&&j>i){try{return JSON.parse(t.slice(i,j+1))}catch(e){}}
   return null;
 }
-function aiErr(e){const m=String(e&&e.message||e||"").toLowerCase();
+function aiErr(e){const m=(String(e&&e.code||"")+" "+String(e&&e.message||e||"")).toLowerCase().replace(/-/g," ");
+  if(m.includes("api not enabled")||m.includes("ailogic")||m.includes("get started"))return "Gemini n'est pas encore activé : Console Firebase → AI Logic → « Commencer » → Gemini Developer API (voir README). Attends ensuite 2-3 minutes.";
   if(m.includes("app check")||m.includes("appcheck")||m.includes("recaptcha"))return "Scan bloqué par App Check : ajoute ta clé reCAPTCHA Enterprise dans firebase-config.js (voir README).";
   if(m.includes("429")||m.includes("quota")||m.includes("resource_exhausted"))return "Limite gratuite atteinte pour le moment, réessaie plus tard.";
   if(m.includes("api has not been used")||m.includes("not enabled")||m.includes("permission"))return "Firebase AI Logic n'est pas activé sur ton projet (voir README).";
@@ -284,7 +401,7 @@ async function scanFile(f){
   }catch(e){
     if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;
     console.error(e);
-    openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`);
+    openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div><details style="margin-top:10px"><summary class="sub">Détail technique</summary><div class="sub" style="word-break:break-word;margin-top:6px">${esc(String(e&&e.message||e).slice(0,400))}</div></details>`);
   }
 }
 function showScan(r){
@@ -313,24 +430,42 @@ document.addEventListener("submit",e=>{
     S.paies.push({id:d.id,mission:mid||"",date:d.date,montant:+d.montant,recu:!!f.recu.checked,heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
     scanRes=null;closeSheet();save();toast(S.reglages.pct?`Paie ajoutée · épargne ${eur(+d.montant*S.reglages.pct/100)}`:"Paie ajoutée");return}
-  if(t==="depense"){d.montant=+d.montant;S.depenses.push(d)}
-  if(t==="paie"){d.montant=+d.montant;d.recu=!!f.recu.checked;if(d.heures)d.heures=+d.heures;S.paies.push(d);if(d.recu&&S.reglages.pct)toast(`Pense à épargner ${eur(d.montant*S.reglages.pct/100)}`)}
-  if(t==="mission"){d.taux=d.taux?+d.taux:0;S.missions.push(d)}
-  if(t==="fixe"){d.montant=+d.montant;S.fixes.push(d)}
-  if(t==="paie"||t==="depense"){const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1)}
-  closeSheet();save();if(t!=="paie")toast("Ajouté");
+  if(t==="budgets"){const B={};CATS.forEach(c=>{const v=+d["b_"+c];if(v>0)B[c]=v});S.budgets=B;closeSheet();save();toast("Budgets enregistrés");return}
+  if(t==="epargne"){const m=Math.abs(+d.montant||0)*(+f.dataset.sign||1);if(!m)return;
+    if(d.target){const o=S.objectifs.find(o=>o.id===d.target);if(o){o.actuel=Math.round(((+o.actuel||0)+m)*100)/100;if(o.actuel>=+o.cible&&m>0)setTimeout(()=>toast("🎉 Objectif « "+o.nom+" » atteint !"),300)}}
+    else S.reglages.epargne=Math.round(((+S.reglages.epargne||0)+m)*100)/100;
+    S.epargneLog.push({id:d.id,date:d.date,montant:m,target:d.target||"",note:d.note||""});
+    if(S.epargneLog.length>400)S.epargneLog=S.epargneLog.slice(-400);
+    closeSheet();save();toast(m>0?`+${eur2(m)} mis de côté 💪`:`${eur2(m)} retiré`);return}
+  // ajout / modification générique
+  const fix={depense:x=>{x.montant=+x.montant},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.heures=x.heures?+x.heures:""},
+    mission:x=>{x.taux=x.taux?+x.taux:0},fixe:x=>{x.montant=+x.montant},objectif:x=>{x.cible=+x.cible;x.actuel=+x.actuel||0}};
+  if(!fix[t])return;
+  fix[t](d);
+  const coll=S[COLL[t]], eid=f.dataset.id;
+  if(eid){const o=coll.find(x=>x.id===eid);if(o){delete d.id;Object.assign(o,d)}}
+  else coll.push(d);
+  if(t==="paie"&&!eid&&d.recu&&S.reglages.pct)setTimeout(()=>toast(`Pense à épargner ${eur(d.montant*S.reglages.pct/100)}`),50);
+  if((t==="paie"||t==="depense")&&d.date){const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1)}
+  closeSheet();save();toast(eid?"Modifié ✓":"Ajouté ✓");
 });
 
 document.addEventListener("click",e=>{
-  const b=e.target.closest("button,[data-toggle],[data-detail]");
+  const b=e.target.closest("button,[data-toggle],[data-detail],[data-edit],[data-cat],[data-emo]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
   if(b.classList.contains("scanBtn")){$("fileIn").click();return}
+  if(b.dataset.cat){document.querySelectorAll("#catChips button").forEach(x=>x.classList.toggle("on",x===b));$("catIn").value=b.dataset.cat;return}
+  if(b.dataset.emo){document.querySelectorAll("#emoChips button").forEach(x=>x.classList.toggle("on",x===b));$("emoIn").value=b.dataset.emo;return}
+  if(b.dataset.edit&&b.tagName!=="BUTTON"){const[ty,id]=b.dataset.edit.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
+  if(b.dataset.del2){const[k,id]=b.dataset.del2.split(":");
+    if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Appuie encore pour confirmer";setTimeout(()=>{if(b.isConnected){b.dataset.confirm="";b.textContent="Supprimer"}},3000);return}
+    S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});closeSheet();save();toast("Supprimé");return}
   if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail)openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${detailHTML(p.detail)}`);return}
   if(b.dataset.v){document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));
-    $("fab").style.display=b.dataset.v==="set"?"none":"block";window.scrollTo(0,0);return}
-  if(b.dataset.open){openSheet(b.dataset.open);return}
+    $("fab").style.display=b.dataset.v==="set"?"none":"block";$("monthBar").style.display=b.dataset.v==="set"?"none":"";window.scrollTo(0,0);return}
+  if(b.dataset.open){const o=b.dataset.open;if(o==="retrait")openSheet("epargne",null,null,{retrait:true});else openSheet(o,null,null,{amt:b.dataset.amt,target:b.dataset.target});return}
   if(b.dataset.paie){openSheet("paie",b.dataset.paie);return}
   if(b.hasAttribute("data-close")){closeSheet();return}
   if(b.dataset.del){const[k,id]=b.dataset.del.split(":");
@@ -339,6 +474,14 @@ document.addEventListener("click",e=>{
   if(b.dataset.toggle){const p=S.paies.find(x=>x.id===b.dataset.toggle);if(p){p.recu=!p.recu;save()}return}
 });
 $("fab").onclick=()=>{const v=document.querySelector(".view.on").id;openSheet(v==="v-rev"?"paie":v==="v-dep"?"depense":"choix")};
+let sTimer;$("search").oninput=()=>{clearTimeout(sTimer);sTimer=setTimeout(render,150)};
+["simH","simT","simW"].forEach(id=>$(id).oninput=()=>{if(id==="simT")$("simT").dataset.touched=1;renderStats()});
+$("bCsv").onclick=()=>{
+  const y=String(cur.getFullYear()),q=v=>`"${String(v??"").replace(/"/g,'""')}"`,n=v=>String(+v||0).replace(".",",");
+  const L=[["Type","Date","Montant","Catégorie / Mission","Heures","Brut","Reçue","Note"].map(q).join(";")];
+  S.paies.filter(p=>(p.date||"").startsWith(y)).forEach(p=>{const m=S.missions.find(x=>x.id===p.mission);L.push([q("Paie"),q(p.date),n(p.montant),q(m?(m.agence+" "+(m.client||"")).trim():""),n(p.heures),p.detail&&p.detail.brut?n(p.detail.brut):"",q(p.recu?"oui":"non"),q(p.note)].join(";"))});
+  S.depenses.filter(d=>(d.date||"").startsWith(y)).forEach(d=>L.push([q("Dépense"),q(d.date),n(-d.montant),q(d.cat),"","","",q(d.note)].join(";")));
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+L.join("\n")],{type:"text/csv;charset=utf-8"}));a.download=`budget-interim-${y}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);toast("CSV téléchargé")};
 $("fileIn").onchange=()=>{const f=$("fileIn").files[0];$("fileIn").value="";if(f)scanFile(f)};
 $("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render()};
 $("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render()};

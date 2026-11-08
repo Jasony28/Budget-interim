@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Budget Intérim</title>
-<meta name="theme-color" content="#0f1115">
+<meta name="theme-color" content="#0a0a0b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Budget">
@@ -15,8 +15,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0f1115;--card:#181b22;--card2:#20242d;--line:#2a2f3a;--txt:#eef0f4;--mut:#8b93a5;
-  --acc:#4ade80;--acc2:#22c55e;--warn:#fbbf24;--bad:#f87171;--blue:#60a5fa;
+  --bg:#0a0a0b;--card:#151517;--card2:#1f1f23;--line:#2c2c32;--txt:#f4f4f5;--mut:#9a9aa5;
+  --acc:#ef233c;--acc2:#b8121f;--pos:#4ade80;--warn:#fbbf24;--bad:#ff4d5e;--out:#ff6b78;--blue:#60a5fa;
   --r:16px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -34,12 +34,12 @@ main{padding:0 14px;max-width:640px;margin:0 auto}
 .card{background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px}
 .k{font-size:12px;color:var(--mut);font-weight:600}
 .v{font-size:22px;font-weight:800;margin-top:4px;letter-spacing:-.02em}
-.big{grid-column:1/-1;background:linear-gradient(135deg,#14532d,#166534 60%,#15803d)}
-.big .k{color:#bbf7d0}.big .v{font-size:32px}
-.neg{background:linear-gradient(135deg,#7f1d1d,#991b1b)}
-.neg .k{color:#fecaca}
+.big{grid-column:1/-1;background:linear-gradient(135deg,#5c0a12,#a4101f 55%,#ef233c);box-shadow:0 10px 30px rgba(239,35,60,.25)}
+.big .k{color:#ffd1d6}.big .v{font-size:32px}
+.neg{background:#120607;border:2px solid var(--acc);box-shadow:none}
+.neg .k{color:#ff8a95}
 .sub{font-size:12px;color:var(--mut);margin-top:4px}
-.big .sub{color:#dcfce7}
+.big .sub{color:#ffe4e7}
 h2{font-size:15px;font-weight:700;margin:18px 4px 10px}
 .alert{border-left:4px solid var(--warn);display:flex;gap:10px;align-items:flex-start}
 .alert.ok{border-color:var(--acc)}.alert.bad{border-color:var(--bad)}
@@ -51,12 +51,12 @@ h2{font-size:15px;font-weight:700;margin:18px 4px 10px}
 .row .l{min-width:0}.row .l b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .l small{color:var(--mut);font-size:12px}
 .amt{font-weight:800;white-space:nowrap}
-.pos{color:var(--acc)}.out{color:var(--bad)}.pend{color:var(--warn)}
+.pos{color:var(--pos)}.out{color:var(--out)}.pend{color:var(--warn)}
 .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--card2);color:var(--mut);margin-left:6px}
-.pill.y{background:#422006;color:var(--warn)}.pill.g{background:#052e16;color:var(--acc)}
+.pill.y{background:#422006;color:var(--warn)}.pill.g{background:#3a0a10;color:#ff8a95}.pill.r{background:#3a0a10;color:var(--bad)}
 .del{background:none;border:0;color:var(--mut);font-size:18px;cursor:pointer;padding:4px 6px}
 .empty{color:var(--mut);font-size:13px;text-align:center;padding:16px 0}
-.btn{background:var(--acc);color:#052e16;border:0;border-radius:12px;padding:12px 16px;font-weight:800;font-family:inherit;font-size:14px;cursor:pointer;width:100%}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:12px;padding:12px 16px;font-weight:800;font-family:inherit;font-size:14px;cursor:pointer;width:100%}
 .btn.sec{background:var(--card2);color:var(--txt)}
 .btn.sm{width:auto;padding:8px 12px;font-size:13px}
 form{display:grid;gap:10px}
@@ -66,19 +66,19 @@ input:focus,select:focus{outline:2px solid var(--acc);border-color:transparent}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .chk{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--txt)}
 .chk input{width:20px;height:20px}
-nav{position:fixed;bottom:0;left:0;right:0;background:rgba(15,17,21,.95);backdrop-filter:blur(10px);border-top:1px solid var(--line);
+nav{position:fixed;bottom:0;left:0;right:0;background:rgba(10,10,11,.96);backdrop-filter:blur(10px);border-top:1px solid var(--line);
   display:flex;padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:5}
 nav button{flex:1;background:none;border:0;color:var(--mut);font-family:inherit;font-size:11px;font-weight:700;padding:6px 0;display:grid;gap:2px;cursor:pointer;border-radius:12px}
 nav button .ic{font-size:20px}
 nav button.on{color:var(--acc);background:var(--card)}
-.fab{position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:18px;background:var(--acc);color:#052e16;border:0;font-size:30px;font-weight:800;box-shadow:0 8px 24px rgba(74,222,128,.3);cursor:pointer;z-index:4}
+.fab{position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:18px;background:var(--acc);color:#fff;border:0;font-size:30px;font-weight:800;box-shadow:0 8px 24px rgba(239,35,60,.4);cursor:pointer;z-index:4}
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:10;align-items:flex-end;justify-content:center}
 .sheet-bg.open{display:flex}
 .sheet{background:var(--card);width:100%;max-width:640px;border-radius:22px 22px 0 0;padding:18px 16px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
 .sheet h3{font-size:17px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
 .seg{display:flex;background:var(--card2);border-radius:12px;padding:4px;gap:4px;margin-bottom:12px}
 .seg button{flex:1;border:0;background:none;color:var(--mut);padding:9px;border-radius:9px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer}
-.seg button.on{background:var(--acc);color:#052e16}
+.seg button.on{background:var(--acc);color:#fff}
 .chart{display:flex;align-items:flex-end;gap:8px;height:130px;padding-top:10px}
 .chart .c{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end}
 .chart .bars{display:flex;gap:3px;align-items:flex-end;height:100%;width:100%;justify-content:center}
@@ -88,7 +88,7 @@ nav button.on{color:var(--acc);background:var(--card)}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .cat{display:flex;justify-content:space-between;font-size:13px;margin-top:8px}
 .est{background:var(--card2);border-radius:12px;padding:12px;font-size:13px;color:var(--mut)}
-.est b{color:var(--acc);font-size:18px}
+.est b{color:var(--pos);font-size:18px}
 .view{display:none}.view.on{display:block}
 .toast{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:700;font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:20}
 .toast.on{opacity:1}
@@ -97,6 +97,21 @@ nav button.on{color:var(--acc);background:var(--card)}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--mut);border-top-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-3px;margin-right:8px}
 @keyframes sp{to{transform:rotate(360deg)}}
 [hidden]{display:none!important}
+input[type=checkbox]{accent-color:var(--acc)}
+summary{cursor:pointer}
+.row .l[data-edit]{cursor:pointer}
+.obj{background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;cursor:pointer}
+.obj .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.obj b{font-size:15px}.obj .pct{font-size:13px;color:var(--acc);font-weight:800}
+.mt{width:100%;border-collapse:collapse;font-size:13px}
+.mt th{color:var(--mut);font-weight:600;text-align:right;padding:6px 4px;font-size:11px}
+.mt th:first-child,.mt td:first-child{text-align:left}
+.mt td{padding:8px 4px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}
+.mt tr.cur td{color:var(--acc);font-weight:800}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:99px;padding:7px 12px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.danger{background:transparent;border:1px solid var(--bad);color:var(--bad)}
 #login{position:fixed;inset:0;background:var(--bg);z-index:30;display:flex;align-items:center;justify-content:center;padding:24px}
 #login .login-box{max-width:340px;width:100%;text-align:center}
 body.signed-out>*:not(#login):not(.toast){display:none!important}
@@ -120,7 +135,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 </header>
 
 <main>
-  <div class="month">
+  <div class="month" id="monthBar">
     <button class="ib" id="prev" aria-label="Mois précédent">‹</button>
     <b id="mlabel"></b>
     <button class="ib" id="next" aria-label="Mois suivant">›</button>
@@ -138,6 +153,14 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <div class="card"><div class="k">Dépenses</div><div class="v out" id="dep">0 €</div><div class="sub" id="depSub"></div></div>
     </div>
 
+    <div class="card" id="jourCard" hidden>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px">
+        <div><div class="k">Budget par jour jusqu'à la fin du mois</div><div class="v" id="parJour">—</div></div>
+        <div class="sub" id="jourSub" style="text-align:right"></div>
+      </div>
+      <div class="bar"><i id="moisBar" style="width:0"></i></div>
+    </div>
+
     <div id="alerts"></div>
 
     <div class="card">
@@ -145,12 +168,16 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <div class="v" id="coussin">—</div>
       <div class="sub" id="coussinSub"></div>
       <div class="bar"><i id="coussinBar" style="width:0"></i></div>
+      <div class="two" style="margin-top:12px"><button class="btn sm" data-open="epargne">+ Épargner</button><button class="btn sec sm" data-open="retrait">− Retirer</button></div>
     </div>
+
+    <h2 style="display:flex;justify-content:space-between;align-items:center">Mes objectifs <button class="btn sec sm" data-open="objectif">+ Objectif</button></h2>
+    <div id="objectifs"></div>
 
     <div class="card">
       <div class="k">Revenus vs dépenses (6 mois)</div>
       <div class="chart" id="chart"></div>
-      <div class="legend"><span><i style="background:var(--acc)"></i>Revenus</span><span><i style="background:var(--bad)"></i>Dépenses</span></div>
+      <div class="legend"><span><i style="background:#f4f4f5"></i>Revenus</span><span><i style="background:var(--acc)"></i>Dépenses</span><span id="chartAvg"></span></div>
     </div>
 
     <div class="card" id="catCard">
@@ -174,16 +201,58 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <h2>Charges fixes (chaque mois)</h2>
     <div class="card" id="fixes"></div>
     <button class="btn sec" data-open="fixe">+ Charge fixe</button>
+    <h2 style="display:flex;justify-content:space-between;align-items:center">Budgets du mois <button class="btn sec sm" data-open="budgets">Modifier</button></h2>
+    <div class="card" id="budgets"></div>
     <h2>Dépenses du mois</h2>
+    <input id="search" type="search" placeholder="🔍 Rechercher une dépense, une catégorie…" style="margin-bottom:10px">
     <div class="card" id="depenses"></div>
+  </section>
+
+  <!-- STATS -->
+  <section class="view" id="v-stats">
+    <div class="grid">
+      <div class="card big"><div class="k" id="yLabel">Net gagné</div><div class="v" id="yNet">0 €</div><div class="sub" id="ySub"></div></div>
+      <div class="card"><div class="k">Heures prestées</div><div class="v" id="yHeures">0 h</div><div class="sub" id="yJours"></div></div>
+      <div class="card"><div class="k">Net par heure</div><div class="v pos" id="yNetH">—</div><div class="sub">moyenne réelle</div></div>
+      <div class="card"><div class="k">Dépensé</div><div class="v out" id="yDep">0 €</div><div class="sub" id="yDepSub"></div></div>
+      <div class="card"><div class="k">Épargné</div><div class="v" id="yEp">0 €</div><div class="sub" id="yEpSub"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="k">Heures à faire pour couvrir tes dépenses</div>
+      <div class="v" id="hNeed">—</div>
+      <div class="sub" id="hNeedSub"></div>
+    </div>
+
+    <div class="card">
+      <div class="k">Simulateur de mission</div>
+      <div class="two" style="margin-top:10px">
+        <label>Heures / semaine<input id="simH" type="number" inputmode="decimal" value="38"></label>
+        <label>Taux brut (€/h)<input id="simT" type="number" step="0.01" inputmode="decimal"></label>
+      </div>
+      <label style="margin-top:10px">Durée (semaines)<input id="simW" type="number" inputmode="numeric" value="4"></label>
+      <div class="est" id="simRes" style="margin-top:10px"></div>
+    </div>
+
+    <h2>Par agence</h2>
+    <div class="card" id="parAgence"></div>
+
+    <h2>Mois par mois</h2>
+    <div class="card" id="parMois"></div>
+
+    <h2>Export</h2>
+    <div class="card">
+      <p class="sub" style="margin-bottom:10px">Toutes tes paies et dépenses de l'année en tableau (Excel, Google Sheets), pratique pour ta déclaration d'impôts.</p>
+      <button class="btn sec" id="bCsv">Télécharger le CSV de l'année</button>
+    </div>
   </section>
 
   <!-- REGLAGES -->
   <section class="view" id="v-set">
-    <h2>Épargne & objectifs</h2>
+    <h2>Réglages</h2>
     <div class="card">
       <form id="fSet">
-        <label>Épargne disponible actuelle (€)<input type="number" step="0.01" inputmode="decimal" id="sEpargne"></label>
+        <label>Épargne disponible actuelle (€) — coussin de sécurité<input type="number" step="0.01" inputmode="decimal" id="sEpargne"></label>
         <label>Mettre de côté sur chaque paie (%)<input type="number" step="1" inputmode="numeric" id="sPct"></label>
         <label>Coussin visé (mois de charges)<input type="number" step="1" inputmode="numeric" id="sMois"></label>
         <label>Ratio net / brut estimé (%)<input type="number" step="1" inputmode="numeric" id="sRatio"></label>
@@ -214,6 +283,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
   <button class="on" data-v="home"><span class="ic">◉</span>Accueil</button>
   <button data-v="rev"><span class="ic">€</span>Paies</button>
   <button data-v="dep"><span class="ic">↓</span>Dépenses</button>
+  <button data-v="stats"><span class="ic">▤</span>Stats</button>
   <button data-v="set"><span class="ic">⚙</span>Réglages</button>
 </nav>
 

@@ -4,6 +4,21 @@ Appli web (PWA) pour gérer son budget d'intérimaire : missions, paies, charges
 
 **L'appli :** https://jasony28.github.io/Budget-interim/
 
+**Fonctions**
+- 💶 Missions et paies (reçues / attendues), estimation du net à partir des heures
+- 📷 Scan de fiche de paie avec Gemini : brut, net, retenues, heures, taux, en un clic
+- 💸 Dépenses par catégorie, recherche, charges fixes mensuelles
+- 📊 Budgets par catégorie avec alertes avant dépassement
+- 📅 Budget par jour jusqu'à la fin du mois
+- 🛟 Coussin de sécurité (combien de mois tu tiens sans mission) + versements / retraits
+- 🎯 Objectifs d'épargne (permis, voiture…) avec montant à mettre de côté chaque mois
+- ⏱️ Heures à faire par mois pour couvrir tes dépenses + simulateur de mission
+- 📈 Stats annuelles : net, heures, net/heure réel, par agence, mois par mois
+- 🔔 Alertes : fin de mission, paie en retard, budget dépassé, épargne à faire
+- 📤 Export CSV (Excel / déclaration d'impôts) + sauvegarde JSON
+- ✏️ Tout est modifiable : touche une ligne pour l'éditer
+
+**Technique**
 - Connexion avec Google (Firebase Auth)
 - Données synchronisées entre appareils et disponibles hors ligne (Firestore)
 - Scan de fiche de paie avec Gemini (Firebase AI Logic, offre gratuite)
