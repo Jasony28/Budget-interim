@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Budget Intérim</title>
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Budget">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f1115;--card:#181b22;--card2:#20242d;--line:#2a2f3a;--txt:#eef0f4;--mut:#8b93a5;
+  --acc:#4ade80;--acc2:#22c55e;--warn:#fbbf24;--bad:#f87171;--blue:#60a5fa;
+  --r:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Manrope,system-ui,sans-serif;background:var(--bg);color:var(--txt);
+  padding:env(safe-area-inset-top) 0 calc(80px + env(safe-area-inset-bottom));min-height:100vh;-webkit-tap-highlight-color:transparent}
+header{padding:18px 18px 8px;display:flex;align-items:center;justify-content:space-between}
+h1{font-size:20px;font-weight:800;letter-spacing:-.02em}
+h1 span{color:var(--acc)}
+.sync{font-size:11px;color:var(--mut)}
+main{padding:0 14px;max-width:640px;margin:0 auto}
+.month{display:flex;align-items:center;justify-content:space-between;background:var(--card);border-radius:var(--r);padding:8px;margin:8px 0 14px}
+.month b{font-size:15px;text-transform:capitalize}
+.ib{background:var(--card2);border:0;color:var(--txt);width:38px;height:38px;border-radius:12px;font-size:18px;cursor:pointer}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px}
+.k{font-size:12px;color:var(--mut);font-weight:600}
+.v{font-size:22px;font-weight:800;margin-top:4px;letter-spacing:-.02em}
+.big{grid-column:1/-1;background:linear-gradient(135deg,#14532d,#166534 60%,#15803d)}
+.big .k{color:#bbf7d0}.big .v{font-size:32px}
+.neg{background:linear-gradient(135deg,#7f1d1d,#991b1b)}
+.neg .k{color:#fecaca}
+.sub{font-size:12px;color:var(--mut);margin-top:4px}
+.big .sub{color:#dcfce7}
+h2{font-size:15px;font-weight:700;margin:18px 4px 10px}
+.alert{border-left:4px solid var(--warn);display:flex;gap:10px;align-items:flex-start}
+.alert.ok{border-color:var(--acc)}.alert.bad{border-color:var(--bad)}
+.alert .t{font-weight:700;font-size:14px}.alert p{font-size:13px;color:var(--mut);margin-top:2px}
+.bar{height:8px;background:var(--card2);border-radius:99px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:99px}
+.row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);gap:10px}
+.row:last-child{border-bottom:0}
+.row .l{min-width:0}.row .l b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .l small{color:var(--mut);font-size:12px}
+.amt{font-weight:800;white-space:nowrap}
+.pos{color:var(--acc)}.out{color:var(--bad)}.pend{color:var(--warn)}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--card2);color:var(--mut);margin-left:6px}
+.pill.y{background:#422006;color:var(--warn)}.pill.g{background:#052e16;color:var(--acc)}
+.del{background:none;border:0;color:var(--mut);font-size:18px;cursor:pointer;padding:4px 6px}
+.empty{color:var(--mut);font-size:13px;text-align:center;padding:16px 0}
+.btn{background:var(--acc);color:#052e16;border:0;border-radius:12px;padding:12px 16px;font-weight:800;font-family:inherit;font-size:14px;cursor:pointer;width:100%}
+.btn.sec{background:var(--card2);color:var(--txt)}
+.btn.sm{width:auto;padding:8px 12px;font-size:13px}
+form{display:grid;gap:10px}
+label{font-size:12px;color:var(--mut);font-weight:600;display:grid;gap:5px}
+input,select{background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:12px;font-family:inherit;font-size:16px;width:100%}
+input:focus,select:focus{outline:2px solid var(--acc);border-color:transparent}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chk{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--txt)}
+.chk input{width:20px;height:20px}
+nav{position:fixed;bottom:0;left:0;right:0;background:rgba(15,17,21,.95);backdrop-filter:blur(10px);border-top:1px solid var(--line);
+  display:flex;padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:5}
+nav button{flex:1;background:none;border:0;color:var(--mut);font-family:inherit;font-size:11px;font-weight:700;padding:6px 0;display:grid;gap:2px;cursor:pointer;border-radius:12px}
+nav button .ic{font-size:20px}
+nav button.on{color:var(--acc);background:var(--card)}
+.fab{position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:18px;background:var(--acc);color:#052e16;border:0;font-size:30px;font-weight:800;box-shadow:0 8px 24px rgba(74,222,128,.3);cursor:pointer;z-index:4}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:10;align-items:flex-end;justify-content:center}
+.sheet-bg.open{display:flex}
+.sheet{background:var(--card);width:100%;max-width:640px;border-radius:22px 22px 0 0;padding:18px 16px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+.sheet h3{font-size:17px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.seg{display:flex;background:var(--card2);border-radius:12px;padding:4px;gap:4px;margin-bottom:12px}
+.seg button{flex:1;border:0;background:none;color:var(--mut);padding:9px;border-radius:9px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer}
+.seg button.on{background:var(--acc);color:#052e16}
+.chart{display:flex;align-items:flex-end;gap:8px;height:130px;padding-top:10px}
+.chart .c{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end}
+.chart .bars{display:flex;gap:3px;align-items:flex-end;height:100%;width:100%;justify-content:center}
+.chart .bars i{width:42%;max-width:16px;border-radius:5px 5px 2px 2px;min-height:2px}
+.chart small{font-size:10px;color:var(--mut);text-transform:capitalize}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--mut);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.cat{display:flex;justify-content:space-between;font-size:13px;margin-top:8px}
+.est{background:var(--card2);border-radius:12px;padding:12px;font-size:13px;color:var(--mut)}
+.est b{color:var(--acc);font-size:18px}
+.view{display:none}.view.on{display:block}
+.toast{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:700;font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:20}
+.toast.on{opacity:1}
+.ln{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)}
+.ln:last-child{border-bottom:0}.ln span{color:var(--mut)}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid var(--mut);border-top-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-3px;margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+[hidden]{display:none!important}
+#login{position:fixed;inset:0;background:var(--bg);z-index:30;display:flex;align-items:center;justify-content:center;padding:24px}
+#login .login-box{max-width:340px;width:100%;text-align:center}
+body.signed-out>*:not(#login):not(.toast){display:none!important}
+body:not(.signed-out) #login{display:none}
+textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:10px;font-family:monospace;font-size:12px}
+</style>
+</head>
+<body class="signed-out">
+<div id="login">
+  <div class="login-box">
+    <img src="icon-192.png" alt="" width="84" height="84" style="border-radius:22px">
+    <h1 style="margin:16px 0 6px">Budget <span>Intérim</span></h1>
+    <p class="sub" style="margin-bottom:22px">Missions, paies, dépenses et épargne,<br>pensé pour les revenus d'intérimaire.</p>
+    <button class="btn" id="bLogin">Se connecter avec Google</button>
+    <p class="sub" id="loginErr" style="margin-top:14px;color:var(--bad)"></p>
+  </div>
+</div>
+<header>
+  <h1>Budget <span>Intérim</span></h1>
+  <div class="sync" id="sync">Chargement…</div>
+</header>
+
+<main>
+  <div class="month">
+    <button class="ib" id="prev" aria-label="Mois précédent">‹</button>
+    <b id="mlabel"></b>
+    <button class="ib" id="next" aria-label="Mois suivant">›</button>
+  </div>
+
+  <!-- ACCUEIL -->
+  <section class="view on" id="v-home">
+    <div class="grid">
+      <div class="card big" id="resteCard">
+        <div class="k">Reste à vivre ce mois</div>
+        <div class="v" id="reste">0 €</div>
+        <div class="sub" id="resteSub"></div>
+      </div>
+      <div class="card"><div class="k">Paies reçues</div><div class="v pos" id="recu">0 €</div><div class="sub" id="attendu"></div></div>
+      <div class="card"><div class="k">Dépenses</div><div class="v out" id="dep">0 €</div><div class="sub" id="depSub"></div></div>
+    </div>
+
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="k">Coussin de sécurité</div>
+      <div class="v" id="coussin">—</div>
+      <div class="sub" id="coussinSub"></div>
+      <div class="bar"><i id="coussinBar" style="width:0"></i></div>
+    </div>
+
+    <div class="card">
+      <div class="k">Revenus vs dépenses (6 mois)</div>
+      <div class="chart" id="chart"></div>
+      <div class="legend"><span><i style="background:var(--acc)"></i>Revenus</span><span><i style="background:var(--bad)"></i>Dépenses</span></div>
+    </div>
+
+    <div class="card" id="catCard">
+      <div class="k">Dépenses par catégorie</div>
+      <div id="cats"></div>
+    </div>
+  </section>
+
+  <!-- PAIES & MISSIONS -->
+  <section class="view" id="v-rev">
+    <h2>Missions</h2>
+    <div class="card" id="missions"></div>
+    <button class="btn sec" data-open="mission">+ Nouvelle mission</button>
+    <h2>Paies du mois</h2>
+    <button class="btn scanBtn" hidden style="margin-bottom:10px">📷 Scanner une fiche de paie</button>
+    <div class="card" id="paies"></div>
+  </section>
+
+  <!-- DEPENSES -->
+  <section class="view" id="v-dep">
+    <h2>Charges fixes (chaque mois)</h2>
+    <div class="card" id="fixes"></div>
+    <button class="btn sec" data-open="fixe">+ Charge fixe</button>
+    <h2>Dépenses du mois</h2>
+    <div class="card" id="depenses"></div>
+  </section>
+
+  <!-- REGLAGES -->
+  <section class="view" id="v-set">
+    <h2>Épargne & objectifs</h2>
+    <div class="card">
+      <form id="fSet">
+        <label>Épargne disponible actuelle (€)<input type="number" step="0.01" inputmode="decimal" id="sEpargne"></label>
+        <label>Mettre de côté sur chaque paie (%)<input type="number" step="1" inputmode="numeric" id="sPct"></label>
+        <label>Coussin visé (mois de charges)<input type="number" step="1" inputmode="numeric" id="sMois"></label>
+        <label>Ratio net / brut estimé (%)<input type="number" step="1" inputmode="numeric" id="sRatio"></label>
+        <button class="btn">Enregistrer</button>
+      </form>
+    </div>
+    <h2>Sauvegarde</h2>
+    <div class="card">
+      <p class="sub" style="margin-bottom:10px">Copie tes données pour les garder ailleurs, ou colle une sauvegarde pour la restaurer.</p>
+      <textarea id="backup" placeholder="Colle une sauvegarde ici…"></textarea>
+      <div class="two" style="margin-top:10px">
+        <button class="btn sec" id="bCopy">Copier</button>
+        <button class="btn sec" id="bRestore">Restaurer</button>
+      </div>
+      <button class="btn sec" id="bDownload" style="margin-top:10px">Télécharger un fichier .json</button>
+    </div>
+    <h2>Compte</h2>
+    <div class="card">
+      <p class="sub" id="who" style="margin-bottom:10px"></p>
+      <button class="btn sec" id="bLogout">Se déconnecter</button>
+    </div>
+  </section>
+</main>
+
+<button class="fab" id="fab" aria-label="Ajouter">+</button>
+
+<nav>
+  <button class="on" data-v="home"><span class="ic">◉</span>Accueil</button>
+  <button data-v="rev"><span class="ic">€</span>Paies</button>
+  <button data-v="dep"><span class="ic">↓</span>Dépenses</button>
+  <button data-v="set"><span class="ic">⚙</span>Réglages</button>
+</nav>
+
+<div class="sheet-bg" id="sheetBg">
+  <div class="sheet" id="sheet"></div>
+</div>
+<div class="toast" id="toast"></div>
+<input type="file" id="fileIn" accept="image/*" hidden>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
