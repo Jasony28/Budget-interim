@@ -3,8 +3,9 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import { firebaseConfig, recaptchaEnterpriseSiteKey, geminiModel } from "./firebase-config.js?v=6";
+import { firebaseConfig, recaptchaEnterpriseSiteKey, geminiModel } from "./firebase-config.js?v=7";
 
+const APP_VERSION=7;
 const CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
 const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],reglages:{epargne:0,pct:10,mois:3,ratio:78}};
 let S=JSON.parse(JSON.stringify(DEF));
@@ -79,6 +80,21 @@ $("bLogin").onclick=async()=>{
 };
 document.addEventListener("click",e=>{if(e.target.id==="bRedirect")loginRedirect()});
 $("bLogout").onclick=()=>signOut(auth);
+/* ---------- mise à jour de l'appli ---------- */
+async function forceUpdate(){
+  document.querySelectorAll(".updBtn").forEach(b=>b.classList.add("spin-it"));
+  try{const regs=navigator.serviceWorker?await navigator.serviceWorker.getRegistrations():[];for(const r of regs)await r.unregister();
+    if(window.caches){const ks=await caches.keys();await Promise.all(ks.map(k=>caches.delete(k)))}}catch(e){}
+  location.replace(location.pathname+"?maj="+Date.now());
+}
+async function checkUpdate(){
+  try{const r=await fetch("version.json?t="+Date.now(),{cache:"no-store"});if(!r.ok)return;const j=await r.json();
+    if(+j.version>APP_VERSION){$("updBanner").hidden=false;$("verLabel").textContent=`Version ${APP_VERSION} · la ${j.version} est disponible`}}catch(e){}
+}
+document.addEventListener("click",e=>{if(e.target.closest(".updBtn"))forceUpdate()});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkUpdate()});
+setTimeout(checkUpdate,1500);
+if(location.search.includes("maj="))history.replaceState(null,"",location.pathname);
 if("serviceWorker" in navigator){const had=!!navigator.serviceWorker.controller;window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").then(r=>r.update()).catch(()=>{}));navigator.serviceWorker.addEventListener("controllerchange",()=>{if(had&&!window.__reloaded){window.__reloaded=1;location.reload()}})}
 
 /* ---------- calculs ---------- */

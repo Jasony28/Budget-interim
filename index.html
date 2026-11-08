@@ -97,6 +97,8 @@ nav button.on{color:var(--acc);background:var(--card)}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--mut);border-top-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-3px;margin-right:8px}
 @keyframes sp{to{transform:rotate(360deg)}}
 [hidden]{display:none!important}
+#updBanner{position:sticky;top:0;z-index:6;background:var(--acc);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px}
+.updBtn.spin-it{animation:sp 1s linear infinite}
 #viewer{position:fixed;inset:0;background:#000;z-index:40;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
 #viewer.open{display:block}
 #viewerClose{position:fixed;top:calc(12px + env(safe-area-inset-top));right:14px;z-index:41;width:44px;height:44px;border-radius:50%;border:0;background:rgba(239,35,60,.9);color:#fff;font-size:26px;cursor:pointer}
@@ -135,9 +137,10 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <p class="sub" id="loginErr" style="margin-top:14px;color:var(--bad)"></p>
   </div>
 </div>
+<div id="updBanner" hidden><span>✨ Nouvelle version disponible</span><button class="btn sm updBtn" style="background:#fff;color:var(--acc)">Mettre à jour</button></div>
 <header>
   <h1>Budget <span>Intérim</span></h1>
-  <div class="sync" id="sync">Chargement…</div>
+  <div style="display:flex;align-items:center;gap:8px"><div class="sync" id="sync">Chargement…</div><button class="ib updBtn" title="Mettre à jour l'appli" aria-label="Mettre à jour" style="width:34px;height:34px;font-size:16px">↻</button></div>
 </header>
 
 <main>
@@ -279,8 +282,9 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <h2>Compte</h2>
     <div class="card">
       <p class="sub" id="who" style="margin-bottom:10px"></p>
+      <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" style="margin-top:10px;text-align:center">Version 6</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 7</p>
     </div>
   </section>
 </main>
@@ -302,6 +306,6 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=6"></script>
+<script type="module" src="app.js?v=7"></script>
 </body>
 </html>

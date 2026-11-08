@@ -70,5 +70,11 @@ Ouvre l'adresse de l'appli dans Chrome, puis **⋮ → Ajouter à l'écran d'acc
 
 > La config Firebase (apiKey, etc.) peut être publique sans risque : ce sont les règles Firestore et App Check qui protègent tes données et le quota Gemini.
 
-## Mettre à jour l'appli
-Après une modification, change `CACHE = "budget-interim-v1"` dans `sw.js` (v2, v3…) pour que les téléphones récupèrent la nouvelle version.
+## Publier une nouvelle version
+Augmente le numéro au même endroit partout (ex. 7 → 8) :
+- `version.json` → `"version": 8`
+- `app.js` → `APP_VERSION=8` et `firebase-config.js?v=8`
+- `index.html` → `app.js?v=8` et « Version 8 »
+- `sw.js` → `CACHE = "budget-interim-v8"` et les `?v=8`
+
+Les téléphones affichent alors le bandeau « Nouvelle version disponible ». Le bouton ↻ force la mise à jour à tout moment.
