@@ -204,6 +204,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <h2 style="display:flex;justify-content:space-between;align-items:center">Budgets du mois <button class="btn sec sm" data-open="budgets">Modifier</button></h2>
     <div class="card" id="budgets"></div>
     <h2>Dépenses du mois</h2>
+    <button class="btn scanBtn" data-mode="facture" hidden style="margin-bottom:10px">🧾 Scanner une facture / un ticket</button>
     <input id="search" type="search" placeholder="🔍 Rechercher une dépense, une catégorie…" style="margin-bottom:10px">
     <div class="card" id="depenses"></div>
   </section>
@@ -291,7 +292,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
   <div class="sheet" id="sheet"></div>
 </div>
 <div class="toast" id="toast"></div>
-<input type="file" id="fileIn" accept="image/*" hidden>
+<input type="file" id="fileIn" accept="image/*,application/pdf" hidden>
 
 <script type="module" src="app.js"></script>
 </body>

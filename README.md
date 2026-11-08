@@ -7,7 +7,8 @@ Appli web (PWA) pour gérer son budget d'intérimaire : missions, paies, charges
 **Fonctions**
 - 💶 Missions et paies (reçues / attendues), estimation du net à partir des heures
 - 📷 Scan de fiche de paie avec Gemini : brut, net, retenues, heures, taux, en un clic
-- 💸 Dépenses par catégorie, recherche, charges fixes mensuelles
+- 🧾 Scan de factures et tickets (photo ou PDF) : montant, catégorie, échéance, factures récurrentes → charges fixes
+- 💸 Dépenses par catégorie, recherche, charges fixes mensuelles, factures à payer
 - 📊 Budgets par catégorie avec alertes avant dépassement
 - 📅 Budget par jour jusqu'à la fin du mois
 - 🛟 Coussin de sécurité (combien de mois tu tiens sans mission) + versements / retraits

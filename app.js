@@ -87,9 +87,10 @@ function monthData(k){
   const p=S.paies.filter(x=>(x.date||"").startsWith(k));
   const recu=p.filter(x=>x.recu).reduce((a,x)=>a+(+x.montant||0),0);
   const att=p.filter(x=>!x.recu).reduce((a,x)=>a+(+x.montant||0),0);
-  const d=S.depenses.filter(x=>(x.date||"").startsWith(k));
+  const all=S.depenses.filter(x=>(x.date||"").startsWith(k));
+  const d=all.filter(x=>!x.fixe); // une facture liée à une charge fixe est déjà comptée dans les fixes
   const var_=d.reduce((a,x)=>a+(+x.montant||0),0);
-  return{p,recu,att,d,var_,fix:fixesTotal(),dep:var_+fixesTotal()};
+  return{p,recu,att,d,all,var_,fix:fixesTotal(),dep:var_+fixesTotal()};
 }
 function missionPaid(m){return S.paies.filter(p=>p.mission===m.id&&p.recu).reduce((a,p)=>a+(+p.montant||0),0)}
 function daysTo(s){return Math.ceil((new Date(s+"T23:59")-new Date())/864e5)}
@@ -139,6 +140,9 @@ function render(){
     else A.push(["ok","Mission en cours",`${esc(m.client||m.agence)}${m.taux?" · "+eur2(m.taux)+"/h brut":""}`])});
   const att=S.paies.filter(p=>!p.recu&&p.date<t);
   if(att.length)A.push(["",`${att.length} paie${att.length>1?"s":""} en retard`,`${eur(sum(att,p=>p.montant))} attendus depuis le ${fmtD(att.map(p=>p.date).sort()[0])}. Vérifie ton compte ou relance l'agence.`]);
+  const ap=S.depenses.filter(x=>x.paye===false).sort((a,b)=>(a.echeance||"9").localeCompare(b.echeance||"9"));
+  if(ap.length){const late=ap.filter(x=>x.echeance&&x.echeance<t),soon=ap.filter(x=>x.echeance&&x.echeance>=t&&daysTo(x.echeance)<=7);
+    A.push([late.length?"bad":soon.length?"":"ok",`${ap.length} facture${ap.length>1?"s":""} à payer · ${eur(sum(ap,x=>x.montant))}`,ap.slice(0,3).map(x=>`${esc(x.note||x.cat)} ${eur2(x.montant)}${x.echeance?(x.echeance<t?" — <b style='color:var(--bad)'>en retard</b>":" — avant le "+fmtD(x.echeance)):""}`).join("<br>")])}
   Object.entries(S.budgets).forEach(([c,lim])=>{if(!(+lim>0))return;const sp=sum(M.d.filter(x=>x.cat===c),x=>x.montant);const p=sp/lim;
     if(p>=1)A.push(["bad",`Budget ${c} dépassé`,`${eur(sp)} dépensés pour ${eur(lim)} prévus (+${eur(sp-lim)}).`]);
     else if(p>=.85)A.push(["",`Budget ${c} presque atteint`,`${eur(sp)} sur ${eur(lim)} — il reste ${eur(lim-sp)}.`])});
@@ -200,9 +204,9 @@ function render(){
 
   // dépenses (+ recherche)
   const q=($("search").value||"").trim().toLowerCase();
-  const dl=q?S.depenses.filter(d=>(d.note+" "+d.cat+" "+d.montant).toLowerCase().includes(q)):M.d;
+  const dl=q?S.depenses.filter(d=>(d.note+" "+d.cat+" "+d.montant).toLowerCase().includes(q)):M.all;
   const dm=[...dl].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,q?100:500);
-  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${esc(d.note||d.cat)}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt out">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
+  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
 
   renderStats();
   // réglages
@@ -211,7 +215,7 @@ function render(){
 
 function renderStats(){
   const y=String(cur.getFullYear()), R=S.reglages;
-  const P=S.paies.filter(p=>(p.date||"").startsWith(y)), D=S.depenses.filter(d=>(d.date||"").startsWith(y));
+  const P=S.paies.filter(p=>(p.date||"").startsWith(y)), D=S.depenses.filter(d=>(d.date||"").startsWith(y)&&!d.fixe);
   const net=sum(P,p=>p.montant), h=sum(P,p=>p.heures), fx=fixesTotal();
   const moisActifs=new Set([...P,...D].map(x=>x.date.slice(0,7)));
   const nbM=Math.max(1,moisActifs.size);
@@ -267,6 +271,9 @@ function openSheet(type,ctx,item,opts={}){
     <input type="hidden" name="cat" id="catIn" value="${esc(it.cat||lastCat)}">
     <div class="two"><label>Date<input name="date" type="date" value="${V("date",today())}" required></label><label>Note<input name="note" placeholder="ex. Delhaize" value="${V("note")}" list="notesList"></label></div>
     <datalist id="notesList">${[...new Set(S.depenses.map(d=>d.note).filter(Boolean))].slice(-30).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+    <label class="chk"><input type="checkbox" name="paye" ${it.paye===false?"":"checked"}> Déjà payée</label>
+    <label>Échéance (si pas encore payée)<input name="echeance" type="date" value="${V("echeance")}"></label>
+    ${it.detail?`<button type="button" class="btn sec" data-fdetail="${it.id}">🧾 Voir le détail du document</button>`:""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
    paie:`${head(ed?"Modifier la paie":"Nouvelle paie")}
     <form data-f="paie" data-id="${V("id")}">${S.missions.length?`<label>Mission<select name="mission" id="pMis"><option value="">— Aucune —</option>${missOpts}</select></label>`:""}
@@ -306,7 +313,7 @@ function openSheet(type,ctx,item,opts={}){
       return `<label style="grid-template-columns:1fr 120px;align-items:center;display:grid">${c}${avg?` <small style="font-weight:400">moy. ${eur(avg)}</small>`:""}<input name="b_${c}" type="number" step="1" inputmode="numeric" value="${esc(S.budgets[c]||"")}" placeholder="—"></label>`}).join("")}
     <button class="btn">Enregistrer</button></form>`,
    choix:`${head("Ajouter")}
-    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn" data-open="depense">💸 Une dépense</button><button class="btn sec" data-open="paie">💶 Une paie reçue</button><button class="btn sec" data-open="mission">🏭 Une mission</button><button class="btn sec" data-open="fixe">🔁 Une charge fixe</button><button class="btn sec" data-open="epargne">🛟 Mettre de côté</button><button class="btn sec" data-open="objectif">🎯 Un objectif</button></div>`
+    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn scanBtn" data-mode="facture" ${canImg?"":"hidden"}>🧾 Scanner une facture / un ticket</button><button class="btn" data-open="depense">💸 Une dépense</button><button class="btn sec" data-open="paie">💶 Une paie reçue</button><button class="btn sec" data-open="mission">🏭 Une mission</button><button class="btn sec" data-open="fixe">🔁 Une charge fixe</button><button class="btn sec" data-open="epargne">🛟 Mettre de côté</button><button class="btn sec" data-open="objectif">🎯 Un objectif</button></div>`
   };
   $("sheet").innerHTML=H[type];$("sheetBg").classList.add("open");
   if(type==="paie"){
@@ -404,6 +411,64 @@ async function scanFile(f){
     openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div><details style="margin-top:10px"><summary class="sub">Détail technique</summary><div class="sub" style="word-break:break-word;margin-top:6px">${esc(String(e&&e.message||e).slice(0,400))}</div></details>`);
   }
 }
+const PROMPT_FACT=`Tu lis la photo, capture d'écran ou PDF d'une FACTURE ou d'un TICKET DE CAISSE (probablement en Belgique ou en France).
+Réponds UNIQUEMENT avec un objet JSON de cette forme :
+{"type":"facture" | "ticket","fournisseur":"nom du commerce ou de la société","date":"YYYY-MM-DD (date de la facture / du ticket) ou null","montant_total":montant total TTC à payer en euros,"echeance":"YYYY-MM-DD date limite de paiement ou null","deja_paye":true si c'est un ticket de caisse ou si la facture indique qu'elle est payée / domiciliée, sinon false,
+"categorie":une valeur parmi ${JSON.stringify(CATS)},
+"recurrent":true si c'est un abonnement ou une facture régulière (énergie, eau, internet, téléphone, assurance, loyer, abonnement, crédit), sinon false,
+"periodicite":"mensuel" | "bimestriel" | "trimestriel" | "annuel" | null,
+"lignes":[{"libelle":"article ou poste, court","montant":nombre}],
+"resume":"1 phrase simple : ce que c'est et ce qu'il faut faire (payer avant le…, déjà payé…)"}
+Règles : nombres avec un point décimal, montants positifs. Maximum 15 lignes, les plus importantes (pour un ticket de courses, regroupe si besoin). N'invente rien : null si illisible.
+Catégories : supermarché → "Courses" ; essence/station → "Carburant" ; train, bus, parking, péage → "Transport" ; restaurant, fast-food, café → "Resto" ; pharmacie, médecin → "Santé" ; énergie, eau, internet, téléphone, loyer, assurance habitation, meubles, bricolage → "Maison".
+Si l'image n'est ni une facture ni un ticket, réponds {"erreur":"explication courte"}.`;
+let factRes=null;
+async function scanFacture(f){
+  if(!model||!canImg){toast("Scan indisponible");return}
+  if(f.size>20e6){toast("Fichier trop lourd");return}
+  openRaw(`<h3>Lecture de ta facture <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini analyse ton document… (5 à 30 s)</div>`);
+  const ctl=scanCtl=new AbortController();
+  try{
+    const img=await toJpegB64(f);
+    const res=await model.generateContent([PROMPT_FACT,{inlineData:img}]);
+    if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;
+    const r=parseJSON(res.response.text());
+    if(!r||typeof r!=="object"||r.erreur){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">${esc(r&&r.erreur||"Je n'ai pas reconnu de facture ni de ticket.")}</div><button class="btn scanBtn" data-mode="facture" style="margin-top:12px">Réessayer avec une autre photo</button>`);return}
+    r.lignes=Array.isArray(r.lignes)?r.lignes.slice(0,15).map(l=>({libelle:String(l.libelle||"").slice(0,60),montant:Math.abs(+l.montant||0)})):[];
+    r.montant_total=r.montant_total!=null?Math.abs(+r.montant_total)||null:null;
+    ["fournisseur","resume","periodicite","type"].forEach(k=>{r[k]=r[k]==null?null:String(r[k]).slice(0,300)});
+    ["date","echeance"].forEach(k=>{if(r[k]&&!/^\d{4}-\d{2}-\d{2}$/.test(r[k]))r[k]=null});
+    if(!CATS.includes(r.categorie))r.categorie="Autre";
+    r.deja_paye=!!r.deja_paye;r.recurrent=!!r.recurrent;
+    factRes=r;showFacture(r);
+  }catch(e){
+    if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;
+    console.error(e);
+    openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div><details style="margin-top:10px"><summary class="sub">Détail technique</summary><div class="sub" style="word-break:break-word;margin-top:6px">${esc(String(e&&e.message||e).slice(0,400))}</div></details>`);
+  }
+}
+const PER={mensuel:1,bimestriel:2,trimestriel:3,annuel:12};
+function factDetailHTML(r){
+  return `<div class="grid"><div class="card" style="background:var(--card2)"><div class="k">${r.type==="ticket"?"Ticket":"Facture"}</div><div class="v" style="font-size:17px">${esc(r.fournisseur||"—")}</div><div class="sub">${r.date?new Date(r.date+"T12:00").toLocaleDateString("fr-BE"):""}</div></div>
+   <div class="card" style="background:var(--card2)"><div class="k">Total</div><div class="v out">${r.montant_total!=null?eur2(r.montant_total):"—"}</div><div class="sub">${r.echeance?"à payer avant le "+fmtD(r.echeance):r.deja_paye?"payé":""}</div></div></div>
+   ${r.resume?`<div class="est" style="margin-bottom:10px">${esc(r.resume)}</div>`:""}
+   ${r.lignes&&r.lignes.length?`<div class="k">Détail</div>${r.lignes.map(l=>`<div class="ln"><span>${esc(l.libelle)}</span><b>${eur2(l.montant)}</b></div>`).join("")}`:""}`;
+}
+function showFacture(r){
+  const per=PER[r.periodicite]||1, mens=r.montant_total?r.montant_total/per:0;
+  const dejaFixe=S.fixes.find(x=>r.fournisseur&&x.nom.toLowerCase().includes(r.fournisseur.toLowerCase().split(" ")[0]));
+  openRaw(`<h3>${r.type==="ticket"?"Ton ticket":"Ta facture"} <button class="del" data-close>×</button></h3>${factDetailHTML(r)}
+   <form data-f="facture" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+    <div class="two"><label>Montant (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${r.montant_total??""}"></label><label>Date<input name="date" type="date" required value="${esc(r.date||today())}"></label></div>
+    <label>Catégorie</label><div class="chips" id="catChips">${CATS.map(c=>`<button type="button" class="${r.categorie===c?"on":""}" data-cat="${c}">${c}</button>`).join("")}</div>
+    <input type="hidden" name="cat" id="catIn" value="${esc(r.categorie)}">
+    <label>Note<input name="note" value="${esc(r.fournisseur||"")}"></label>
+    <label class="chk"><input type="checkbox" name="paye" ${r.deja_paye||!r.echeance?"checked":""}> Déjà payée</label>
+    <label>Échéance (si pas encore payée)<input name="echeance" type="date" value="${esc(r.echeance||"")}"></label>
+    ${r.recurrent&&!dejaFixe&&mens?`<label class="chk"><input type="checkbox" name="fixe" checked> Ajouter « ${esc(r.fournisseur||"cette facture")} » aux charges fixes (${eur2(mens)}/mois${per>1?", "+r.periodicite+" ÷ "+per:""})</label>`:""}
+    ${r.recurrent&&dejaFixe?`<p class="sub">Déjà dans tes charges fixes : « ${esc(dejaFixe.nom)} » (${eur2(dejaFixe.montant)}/mois).</p>`:""}
+    <button class="btn">Enregistrer la dépense</button></form>`);
+}
 function showScan(r){
   const ag=(r.agence||"").toLowerCase();
   const match=S.missions.find(m=>ag&&m.agence&&(ag.includes(m.agence.toLowerCase())||m.agence.toLowerCase().includes(ag.split(" ")[0])));
@@ -430,6 +495,13 @@ document.addEventListener("submit",e=>{
     S.paies.push({id:d.id,mission:mid||"",date:d.date,montant:+d.montant,recu:!!f.recu.checked,heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
     scanRes=null;closeSheet();save();toast(S.reglages.pct?`Paie ajoutée · épargne ${eur(+d.montant*S.reglages.pct/100)}`:"Paie ajoutée");return}
+  if(t==="facture"&&factRes){const r=factRes;
+    const dep={id:d.id,montant:+d.montant,cat:d.cat,date:d.date,note:d.note||"",paye:!!f.paye.checked,echeance:f.paye.checked?"":(d.echeance||""),detail:r};
+    S.depenses.push(dep);
+    if(f.fixe&&f.fixe.checked){const per=PER[r.periodicite]||1,fid=uid();S.fixes.push({id:fid,nom:r.fournisseur||d.note||"Facture",montant:Math.round(+d.montant/per*100)/100,jour:""});dep.fixe=fid}
+    else{const fx=S.fixes.find(x=>r.recurrent&&r.fournisseur&&x.nom.toLowerCase().includes(r.fournisseur.toLowerCase().split(" ")[0]));if(fx)dep.fixe=fx.id}
+    const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
+    factRes=null;closeSheet();save();toast(dep.paye?"Dépense ajoutée ✓":"Ajoutée · à payer avant le "+fmtD(dep.echeance||d.date));return}
   if(t==="budgets"){const B={};CATS.forEach(c=>{const v=+d["b_"+c];if(v>0)B[c]=v});S.budgets=B;closeSheet();save();toast("Budgets enregistrés");return}
   if(t==="epargne"){const m=Math.abs(+d.montant||0)*(+f.dataset.sign||1);if(!m)return;
     if(d.target){const o=S.objectifs.find(o=>o.id===d.target);if(o){o.actuel=Math.round(((+o.actuel||0)+m)*100)/100;if(o.actuel>=+o.cible&&m>0)setTimeout(()=>toast("🎉 Objectif « "+o.nom+" » atteint !"),300)}}
@@ -438,7 +510,7 @@ document.addEventListener("submit",e=>{
     if(S.epargneLog.length>400)S.epargneLog=S.epargneLog.slice(-400);
     closeSheet();save();toast(m>0?`+${eur2(m)} mis de côté 💪`:`${eur2(m)} retiré`);return}
   // ajout / modification générique
-  const fix={depense:x=>{x.montant=+x.montant},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.heures=x.heures?+x.heures:""},
+  const fix={depense:x=>{x.montant=+x.montant;x.paye=!!f.paye.checked;if(x.paye)x.echeance=""},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.heures=x.heures?+x.heures:""},
     mission:x=>{x.taux=x.taux?+x.taux:0},fixe:x=>{x.montant=+x.montant},objectif:x=>{x.cible=+x.cible;x.actuel=+x.actuel||0}};
   if(!fix[t])return;
   fix[t](d);
@@ -451,16 +523,17 @@ document.addEventListener("submit",e=>{
 });
 
 document.addEventListener("click",e=>{
-  const b=e.target.closest("button,[data-toggle],[data-detail],[data-edit],[data-cat],[data-emo]");
+  const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
-  if(b.classList.contains("scanBtn")){$("fileIn").click();return}
+  if(b.classList.contains("scanBtn")){scanMode=b.dataset.mode||"paie";$("fileIn").click();return}
   if(b.dataset.cat){document.querySelectorAll("#catChips button").forEach(x=>x.classList.toggle("on",x===b));$("catIn").value=b.dataset.cat;return}
   if(b.dataset.emo){document.querySelectorAll("#emoChips button").forEach(x=>x.classList.toggle("on",x===b));$("emoIn").value=b.dataset.emo;return}
   if(b.dataset.edit&&b.tagName!=="BUTTON"){const[ty,id]=b.dataset.edit.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.del2){const[k,id]=b.dataset.del2.split(":");
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Appuie encore pour confirmer";setTimeout(()=>{if(b.isConnected){b.dataset.confirm="";b.textContent="Supprimer"}},3000);return}
     S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});closeSheet();save();toast("Supprimé");return}
+  if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
   if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail)openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${detailHTML(p.detail)}`);return}
   if(b.dataset.v){document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));
@@ -471,6 +544,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.del){const[k,id]=b.dataset.del.split(":");
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Suppr. ?";b.style.color="var(--bad)";b.style.fontSize="12px";setTimeout(()=>{if(b.isConnected){b.dataset.confirm="";b.textContent="×";b.style.color="";b.style.fontSize=""}},2500);return}
     S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});save();toast("Supprimé");return}
+  if(b.dataset.ptoggle){const p=S.depenses.find(x=>x.id===b.dataset.ptoggle);if(p){p.paye=p.paye===false;if(p.paye)p.echeance="";save();toast(p.paye?"Marquée payée ✓":"Marquée à payer")}return}
   if(b.dataset.toggle){const p=S.paies.find(x=>x.id===b.dataset.toggle);if(p){p.recu=!p.recu;save()}return}
 });
 $("fab").onclick=()=>{const v=document.querySelector(".view.on").id;openSheet(v==="v-rev"?"paie":v==="v-dep"?"depense":"choix")};
@@ -482,7 +556,8 @@ $("bCsv").onclick=()=>{
   S.paies.filter(p=>(p.date||"").startsWith(y)).forEach(p=>{const m=S.missions.find(x=>x.id===p.mission);L.push([q("Paie"),q(p.date),n(p.montant),q(m?(m.agence+" "+(m.client||"")).trim():""),n(p.heures),p.detail&&p.detail.brut?n(p.detail.brut):"",q(p.recu?"oui":"non"),q(p.note)].join(";"))});
   S.depenses.filter(d=>(d.date||"").startsWith(y)).forEach(d=>L.push([q("Dépense"),q(d.date),n(-d.montant),q(d.cat),"","","",q(d.note)].join(";")));
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+L.join("\n")],{type:"text/csv;charset=utf-8"}));a.download=`budget-interim-${y}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);toast("CSV téléchargé")};
-$("fileIn").onchange=()=>{const f=$("fileIn").files[0];$("fileIn").value="";if(f)scanFile(f)};
+let scanMode="paie";
+$("fileIn").onchange=()=>{const f=$("fileIn").files[0];$("fileIn").value="";if(f)(scanMode==="facture"?scanFacture:scanFile)(f)};
 $("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render()};
 $("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render()};
 $("bCopy").onclick=async()=>{const t=JSON.stringify(S);$("backup").value=t;try{await navigator.clipboard.writeText(t);toast("Copié")}catch(e){$("backup").select();toast("Sélectionné, copie-le")}};
