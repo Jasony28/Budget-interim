@@ -18,6 +18,7 @@ Appli web (PWA) pour gérer son budget d'intérimaire : missions, paies, charges
 - 🔔 Alertes : fin de mission, paie en retard, budget dépassé, épargne à faire
 - 📤 Export CSV (Excel / déclaration d'impôts) + sauvegarde JSON
 - ✏️ Tout est modifiable : touche une ligne pour l'éditer
+- 🖼️ Photos et PDF des factures et fiches de paie gardés et consultables (galerie, appareil photo ou fichier)
 
 **Technique**
 - Connexion avec Google (Firebase Auth)

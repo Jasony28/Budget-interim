@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
 import { firebaseConfig, recaptchaEnterpriseSiteKey, geminiModel } from "./firebase-config.js";
@@ -25,7 +25,7 @@ const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
 const fdb=app?initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})}):null;
-let fsDoc=null, unsub=null;
+let fsDoc=null, unsub=null, curUid=null;
 function setSync(t){$("sync").textContent=t}
 function save(){
   render();
@@ -33,7 +33,7 @@ function save(){
   setDoc(fsDoc,JSON.parse(JSON.stringify(S))).catch(e=>{console.error(e);setSync("⚠ Erreur de sauvegarde")});
 }
 function subscribe(uid){
-  fsDoc=doc(fdb,"budgets",uid);
+  fsDoc=doc(fdb,"budgets",uid);curUid=uid;
   setSync("Chargement…");
   unsub=onSnapshot(fsDoc,{includeMetadataChanges:true},snap=>{
     const m=snap.metadata;
@@ -191,7 +191,7 @@ function render(){
   // paies
   const pm=[...M.p].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
-    return row("paie:"+p.id,`<b>${p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+p.heures+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
+    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+p.heures+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
     `<span class="amt ${p.recu?"pos":"pend"}" data-toggle="${p.id}" style="cursor:pointer">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`)}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:`<div class="empty">Aucune paie ce mois</div>`;
 
   // fixes
@@ -206,7 +206,7 @@ function render(){
   const q=($("search").value||"").trim().toLowerCase();
   const dl=q?S.depenses.filter(d=>(d.note+" "+d.cat+" "+d.montant).toLowerCase().includes(q)):M.all;
   const dm=[...dl].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,q?100:500);
-  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
+  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${d.photo?"🖼️ ":d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
 
   renderStats();
   // réglages
@@ -274,6 +274,7 @@ function openSheet(type,ctx,item,opts={}){
     <label class="chk"><input type="checkbox" name="paye" ${it.paye===false?"":"checked"}> Déjà payée</label>
     <label>Échéance (si pas encore payée)<input name="echeance" type="date" value="${V("echeance")}"></label>
     ${it.detail?`<button type="button" class="btn sec" data-fdetail="${it.id}">🧾 Voir le détail du document</button>`:""}
+    ${ed?(it.photo?`<div class="two"><button type="button" class="btn sec" data-photo="${it.photo}">🖼️ Voir la photo</button><button type="button" class="btn sec" data-attach="depenses:${it.id}">🔄 Remplacer</button></div>`:`<button type="button" class="btn sec" data-attach="depenses:${it.id}">📎 Joindre une photo / un PDF</button>`):""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
    paie:`${head(ed?"Modifier la paie":"Nouvelle paie")}
     <form data-f="paie" data-id="${V("id")}">${S.missions.length?`<label>Mission<select name="mission" id="pMis"><option value="">— Aucune —</option>${missOpts}</select></label>`:""}
@@ -283,6 +284,7 @@ function openSheet(type,ctx,item,opts={}){
     <label>Note<input name="note" placeholder="ex. semaine 45" value="${V("note")}"></label>
     <label class="chk"><input type="checkbox" name="recu" ${!ed||it.recu?"checked":""}> Déjà reçue sur mon compte</label>
     ${it.detail?`<button type="button" class="btn sec" data-detail="${it.id}">📄 Voir le détail de la fiche</button>`:""}
+    ${ed?(it.photo?`<div class="two"><button type="button" class="btn sec" data-photo="${it.photo}">🖼️ Voir la photo</button><button type="button" class="btn sec" data-attach="paies:${it.id}">🔄 Remplacer</button></div>`:`<button type="button" class="btn sec" data-attach="paies:${it.id}">📎 Joindre la fiche (photo / PDF)</button>`):""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
    mission:`${head(ed?"Modifier la mission":"Nouvelle mission")}
     <form data-f="mission" data-id="${V("id")}"><div class="two"><label>Agence<input name="agence" required placeholder="ex. ASAP" value="${V("agence")}" list="agList"></label><label>Client / poste<input name="client" placeholder="ex. Magasinier" value="${V("client")}"></label></div>
@@ -389,7 +391,48 @@ function detailHTML(d){
    ${L("info")?`<div class="k" style="margin-top:12px">Infos</div>${L("info")}`:""}
    ${d.avantages?`<div class="k" style="margin-top:12px">Avantages</div><div class="sub">${esc(d.avantages)}</div>`:""}`;
 }
-async function scanFile(f){
+/* ---------- photos (stockées compressées dans Firestore : budgets/{uid}/photos/{id}) ---------- */
+let lastFile=null;
+async function compressPhoto(file){
+  if(file.type==="application/pdf"){
+    if(file.size>700e3)return null; // PDF trop gros pour être gardé
+    const r=await toJpegB64(file);return r;
+  }
+  const bmp=await createImageBitmap(file);
+  for(const [max,q] of [[1600,.72],[1300,.6],[1000,.5],[800,.45]]){
+    const sc=Math.min(1,max/Math.max(bmp.width,bmp.height));
+    const c=document.createElement("canvas");c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
+    c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+    const data=c.toDataURL("image/jpeg",q).split(",")[1];
+    if(data.length<850e3)return{data,mimeType:"image/jpeg"};
+  }
+  return null;
+}
+async function savePhoto(file){
+  if(!file||!curUid)return null;
+  try{const p=await compressPhoto(file);if(!p)return null;
+    const id=uid();
+    setDoc(doc(fdb,"budgets",curUid,"photos",id),{data:p.data,mime:p.mimeType,date:today()}).catch(e=>{console.error(e);toast("⚠ Photo non enregistrée (règles Firestore ?)")});
+    return id;
+  }catch(e){console.error(e);return null}
+}
+function delPhoto(id){if(id&&curUid)deleteDoc(doc(fdb,"budgets",curUid,"photos",id)).catch(()=>{})}
+async function openPhoto(id){
+  $("viewer").classList.add("open");$("viewerBody").innerHTML=`<div class="est"><span class="spin"></span>Chargement…</div>`;
+  try{const snap=await getDoc(doc(fdb,"budgets",curUid,"photos",id));
+    if(!snap.exists()){$("viewerBody").innerHTML=`<div class="est">Photo introuvable.</div>`;return}
+    const p=snap.data();
+    if(p.mime==="application/pdf"){
+      const bin=atob(p.data),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([u],{type:"application/pdf"}));
+      $("viewerBody").innerHTML=`<div style="text-align:center;padding:30px"><div style="font-size:60px">📄</div><a class="btn" href="${url}" target="_blank" rel="noopener" style="display:inline-block;width:auto;text-decoration:none;margin-top:14px">Ouvrir le PDF</a></div>`;
+    }else{
+      $("viewerBody").innerHTML=`<img id="vImg" src="data:${p.mime};base64,${p.data}" alt="Document">`;
+      $("vImg").onclick=()=>$("vImg").classList.toggle("zoom");
+    }
+  }catch(e){console.error(e);$("viewerBody").innerHTML=`<div class="est">Impossible d'afficher la photo (connexion ou règles Firestore).</div>`}
+}
+async function scanFile(f){lastFile=f;
   if(!model||!canImg){toast("Scan indisponible");return}
   if(f.size>20e6){toast("Image trop lourde");return}
   openRaw(`<h3>Lecture de ta fiche <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini analyse ta fiche de paie… (5 à 30 s)</div>`);
@@ -423,7 +466,7 @@ Règles : nombres avec un point décimal, montants positifs. Maximum 15 lignes, 
 Catégories : supermarché → "Courses" ; essence/station → "Carburant" ; train, bus, parking, péage → "Transport" ; restaurant, fast-food, café → "Resto" ; pharmacie, médecin → "Santé" ; énergie, eau, internet, téléphone, loyer, assurance habitation, meubles, bricolage → "Maison".
 Si l'image n'est ni une facture ni un ticket, réponds {"erreur":"explication courte"}.`;
 let factRes=null;
-async function scanFacture(f){
+async function scanFacture(f){lastFile=f;
   if(!model||!canImg){toast("Scan indisponible");return}
   if(f.size>20e6){toast("Fichier trop lourd");return}
   openRaw(`<h3>Lecture de ta facture <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini analyse ton document… (5 à 30 s)</div>`);
@@ -493,11 +536,13 @@ document.addEventListener("submit",e=>{
     else if(mid){const m=S.missions.find(x=>x.id===mid);if(m&&!m.taux&&r.taux_horaire_brut)m.taux=r.taux_horaire_brut}
     if(f.ratio&&f.ratio.checked&&r.brut&&r.net)S.reglages.ratio=Math.round(r.net/r.brut*100);
     S.paies.push({id:d.id,mission:mid||"",date:d.date,montant:+d.montant,recu:!!f.recu.checked,heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});
+    if(lastFile){const pid=d.id,file=lastFile;lastFile=null;savePhoto(file).then(ph=>{const p=S.paies.find(x=>x.id===pid);if(ph&&p){p.photo=ph;save()}})}
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
     scanRes=null;closeSheet();save();toast(S.reglages.pct?`Paie ajoutée · épargne ${eur(+d.montant*S.reglages.pct/100)}`:"Paie ajoutée");return}
   if(t==="facture"&&factRes){const r=factRes;
     const dep={id:d.id,montant:+d.montant,cat:d.cat,date:d.date,note:d.note||"",paye:!!f.paye.checked,echeance:f.paye.checked?"":(d.echeance||""),detail:r};
     S.depenses.push(dep);
+    if(lastFile){const file=lastFile;lastFile=null;savePhoto(file).then(ph=>{const x=S.depenses.find(x=>x.id===dep.id);if(ph&&x){x.photo=ph;save()}})}
     if(f.fixe&&f.fixe.checked){const per=PER[r.periodicite]||1,fid=uid();S.fixes.push({id:fid,nom:r.fournisseur||d.note||"Facture",montant:Math.round(+d.montant/per*100)/100,jour:""});dep.fixe=fid}
     else{const fx=S.fixes.find(x=>r.recurrent&&r.fournisseur&&x.nom.toLowerCase().includes(r.fournisseur.toLowerCase().split(" ")[0]));if(fx)dep.fixe=fx.id}
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
@@ -526,13 +571,16 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
-  if(b.classList.contains("scanBtn")){scanMode=b.dataset.mode||"paie";$("fileIn").click();return}
+  if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";pickSource(m==="facture"?"Scanner une facture / un ticket":"Scanner une fiche de paie",f=>(m==="facture"?scanFacture:scanFile)(f));return}
+  if(b.dataset.src){choosePick(b.dataset.src);return}
   if(b.dataset.cat){document.querySelectorAll("#catChips button").forEach(x=>x.classList.toggle("on",x===b));$("catIn").value=b.dataset.cat;return}
   if(b.dataset.emo){document.querySelectorAll("#emoChips button").forEach(x=>x.classList.toggle("on",x===b));$("emoIn").value=b.dataset.emo;return}
   if(b.dataset.edit&&b.tagName!=="BUTTON"){const[ty,id]=b.dataset.edit.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.del2){const[k,id]=b.dataset.del2.split(":");
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Appuie encore pour confirmer";setTimeout(()=>{if(b.isConnected){b.dataset.confirm="";b.textContent="Supprimer"}},3000);return}
-    S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});closeSheet();save();toast("Supprimé");return}
+    {const o=(S[k]||[]).find(x=>x.id===id);if(o&&o.photo)delPhoto(o.photo)}S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});closeSheet();save();toast("Supprimé");return}
+  if(b.dataset.photo){openPhoto(b.dataset.photo);return}
+  if(b.dataset.attach){const tg=b.dataset.attach;pickSource("Joindre un document",f=>attachPhoto(tg,f));return}
   if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
   if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail)openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${detailHTML(p.detail)}`);return}
   if(b.dataset.v){document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
@@ -543,7 +591,7 @@ document.addEventListener("click",e=>{
   if(b.hasAttribute("data-close")){closeSheet();return}
   if(b.dataset.del){const[k,id]=b.dataset.del.split(":");
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Suppr. ?";b.style.color="var(--bad)";b.style.fontSize="12px";setTimeout(()=>{if(b.isConnected){b.dataset.confirm="";b.textContent="×";b.style.color="";b.style.fontSize=""}},2500);return}
-    S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});save();toast("Supprimé");return}
+    {const o=(S[k]||[]).find(x=>x.id===id);if(o&&o.photo)delPhoto(o.photo)}S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});save();toast("Supprimé");return}
   if(b.dataset.ptoggle){const p=S.depenses.find(x=>x.id===b.dataset.ptoggle);if(p){p.paye=p.paye===false;if(p.paye)p.echeance="";save();toast(p.paye?"Marquée payée ✓":"Marquée à payer")}return}
   if(b.dataset.toggle){const p=S.paies.find(x=>x.id===b.dataset.toggle);if(p){p.recu=!p.recu;save()}return}
 });
@@ -556,8 +604,22 @@ $("bCsv").onclick=()=>{
   S.paies.filter(p=>(p.date||"").startsWith(y)).forEach(p=>{const m=S.missions.find(x=>x.id===p.mission);L.push([q("Paie"),q(p.date),n(p.montant),q(m?(m.agence+" "+(m.client||"")).trim():""),n(p.heures),p.detail&&p.detail.brut?n(p.detail.brut):"",q(p.recu?"oui":"non"),q(p.note)].join(";"))});
   S.depenses.filter(d=>(d.date||"").startsWith(y)).forEach(d=>L.push([q("Dépense"),q(d.date),n(-d.montant),q(d.cat),"","","",q(d.note)].join(";")));
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+L.join("\n")],{type:"text/csv;charset=utf-8"}));a.download=`budget-interim-${y}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);toast("CSV téléchargé")};
-let scanMode="paie";
-$("fileIn").onchange=()=>{const f=$("fileIn").files[0];$("fileIn").value="";if(f)(scanMode==="facture"?scanFacture:scanFile)(f)};
+// Choix de la source : galerie (sélecteur de photos Android), appareil photo, ou fichier/PDF
+let pickCb=null;
+function pickSource(title,cb){pickCb=cb;
+  openRaw(`<h3>${title} <button class="del" type="button" data-close>×</button></h3>
+  <div style="display:grid;gap:10px"><button class="btn" data-src="gallery">🖼️ Choisir dans la galerie</button><button class="btn sec" data-src="camera">📷 Prendre une photo</button><button class="btn sec" data-src="file">📄 Fichier / PDF</button></div>`)}
+function choosePick(src){const i=$("pickIn");
+  if(src==="file"){i.accept="application/pdf,image/*";i.removeAttribute("capture")}
+  else{i.accept="image/*";if(src==="camera")i.setAttribute("capture","environment");else i.removeAttribute("capture")}
+  i.click()}
+$("pickIn").onchange=()=>{const f=$("pickIn").files[0];$("pickIn").value="";if(f&&pickCb){const cb=pickCb;pickCb=null;cb(f)}};
+async function attachPhoto(target,f){
+  const[k,id]=target.split(":");closeSheet();toast("Enregistrement de la photo…");
+  const ph=await savePhoto(f);const o=S[k].find(x=>x.id===id);
+  if(ph&&o){if(o.photo)delPhoto(o.photo);o.photo=ph;save();toast("Photo jointe ✓")}else toast("Photo trop lourde ou non enregistrée")}
+$("viewerClose").onclick=()=>$("viewer").classList.remove("open");
+
 $("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render()};
 $("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render()};
 $("bCopy").onclick=async()=>{const t=JSON.stringify(S);$("backup").value=t;try{await navigator.clipboard.writeText(t);toast("Copié")}catch(e){$("backup").select();toast("Sélectionné, copie-le")}};
