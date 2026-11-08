@@ -62,12 +62,22 @@ function loginMsg(e){const c=e&&e.code||"";
   if(c==="auth/popup-closed-by-user"||c==="auth/cancelled-popup-request")return "";
   if(c==="auth/network-request-failed")return "Pas de connexion internet.";
   return "Connexion impossible ("+c+").";}
+const inWebView=/; wv\)|FBAN|FBAV|Instagram|Line\/|Snapchat|Claude/i.test(navigator.userAgent);
+function loginInfo(html,err){const el=$("loginErr");el.style.color=err?"var(--bad)":"var(--mut)";el.innerHTML=html}
+if(inWebView)loginInfo("⚠️ Tu es dans un navigateur intégré (appli Claude, Messenger…). Google y bloque la connexion : ouvre ce lien directement dans <b>Chrome</b>.",true);
+function provider(){const p=new GoogleAuthProvider();p.setCustomParameters({prompt:"select_account"});return p}
+async function loginRedirect(){loginInfo("Redirection vers Google…");try{await signInWithRedirect(auth,provider())}catch(e){loginInfo(esc(loginMsg(e)),true)}}
+let loginTimer=null;
 $("bLogin").onclick=async()=>{
-  $("loginErr").textContent="";
-  const p=new GoogleAuthProvider();p.setCustomParameters({prompt:"select_account"});
-  try{await signInWithPopup(auth,p)}
-  catch(e){if(["auth/popup-blocked","auth/operation-not-supported-in-this-environment"].includes(e.code)){try{await signInWithRedirect(auth,p)}catch(e2){$("loginErr").textContent=loginMsg(e2)}}else $("loginErr").textContent=loginMsg(e)}
+  loginInfo("Ouverture de la fenêtre Google…");
+  clearTimeout(loginTimer);
+  loginTimer=setTimeout(()=>{if(document.body.classList.contains("signed-out"))loginInfo(`Rien ne s'ouvre ? <button class="btn sec sm" id="bRedirect" style="margin-top:8px">Essayer autrement</button><br><small>Ou ouvre l'appli directement dans Chrome.</small>`)},8000);
+  try{await signInWithPopup(auth,provider());clearTimeout(loginTimer);loginInfo("")}
+  catch(e){clearTimeout(loginTimer);
+    if(["auth/popup-blocked","auth/operation-not-supported-in-this-environment","auth/web-storage-unsupported"].includes(e.code))return loginRedirect();
+    const m=loginMsg(e);loginInfo(esc(m),!!m)}
 };
+document.addEventListener("click",e=>{if(e.target.id==="bRedirect")loginRedirect()});
 $("bLogout").onclick=()=>signOut(auth);
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 
