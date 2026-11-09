@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=17";
+import * as CFG from "./firebase-config.js?v=18";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=17;
+const APP_VERSION=18;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -842,17 +842,27 @@ function lireCSVBanque(txt){const rows=parseCSV(txt);
   for(const r of rows.slice(hi+1)){const date=parseDateFR(r[cD]);let m=cM>=0?parseMontant(r[cM]):NaN;
     if(isNaN(m)&&(cDeb>=0||cCre>=0)){const d=parseMontant(r[cDeb]),c=parseMontant(r[cCre]);m=(isNaN(c)?0:Math.abs(c))-(isNaN(d)?0:Math.abs(d))}
     if(!date||isNaN(m)||!m)continue;
-    const lib=[r[cN],cN<0?r[cL]:"",(!r[cN]&&cL>=0)?r[cL]:"",(!r[cN]&&!r[cL])?r[cC]:""].map(x=>String(x||"").trim()).filter(Boolean)[0]||String(r[cL]||r[cC]||"Opération").trim();
+    const lib=libelleBanque(r[cL]||r[cC]||"Opération",r[cN]);
     const tit=nrm(r[cH]),cp=nrm(r[cN]),cpte=String(r[cCpte]||"").replace(/\s/g,""),cpCpte=String(r[cCp]||"").replace(/\s/g,""),txt=nrm([r[cN],r[cL],r[cC]].join(" "));
-    const interne=(tit&&cp&&(cp.includes(tit)||tit.includes(cp)))||(cpte&&cpCpte&&cpte===cpCpte)||/epargne|spaarrekening|compte d.epargne|livret|vers (mon|votre) compte|virement interne|eigen rekening/.test(txt);
+    const tok=s=>s.split(/[^a-z]+/).filter(w=>w.length>=3),tT=tok(tit),tC=new Set(tok(cp));
+    const interne=(tT.length>0&&tT.every(w=>tC.has(w)))||(cpte&&cpCpte&&cpte===cpCpte)||/epargne|spaarrekening|compte d.epargne|livret|vers (mon|votre) compte|virement interne|eigen rekening/.test(txt);
     out.push({date,montant:Math.round(m*100)/100,libelle:lib.replace(/\s+/g," ").slice(0,50),texte:[r[cN],r[cL],r[cC]].join(" "),interne})}
   if(!out.length)throw new Error("Aucune opération trouvée dans ce fichier.");return out}
-const MOTS_CAT=[[/delhaize|colruyt|aldi|lidl|carrefour|intermarche|spar|okay|match|proxy|albert heijn|cora|super/,"Courses"],[/total|shell|esso|q8|texaco|lukoil|dats|gabriels|octa|power|maes|station/,"Carburant"],[/sncb|nmbs|stib|mivb|tec|de lijn|parking|uber|bolt|indigo|peage|bebat/,"Transport"],[/quick|mcdo|mcdonald|burger|kfc|pizza|resto|restaurant|cafe|brasserie|deliveroo|uber eats|takeaway|snack|friterie/,"Resto"],[/pharma|apotheek|medecin|mutualite|mutualiteit|hopital|dentiste|kine/,"Santé"],[/proximus|orange|telenet|base|voo|scarlet|engie|luminus|totalenergies|eneco|vivaqua|swde|loyer|ikea|brico|gamma|hubo|action/,"Maison"],[/zara|h&m|primark|c&a|kiabi|jbc|decathlon|zalando|vinted/,"Vêtements"],[/netflix|spotify|disney|cinema|kinepolis|steam|playstation|xbox|basic.?fit|jims|fitness/,"Loisirs"]];
-function catDevine(t){t=nrm(t);for(const [re,c] of MOTS_CAT)if(re.test(t)&&cats().includes(c))return c;return cats().includes("Autre")?"Autre":cats()[cats().length-1]}
+// libellé lisible à partir des descriptions bancaires (CBC/KBC…)
+function libelleBanque(desc,nomCp){const d=String(desc||"").replace(/\s+/g," ").trim(),titre=s=>s.toLowerCase().replace(/(^|[\s'’\-])\S/g,c=>c.toUpperCase());let m;
+  if(nomCp&&String(nomCp).trim())return titre(String(nomCp).replace(/^(m\.?|mme|mlle|mr|mevr|dhr)\s+/i,"").trim());
+  if((m=d.match(/CREANCIER\s*:\s*(.+?)\s+REF/i)))return titre(m[1]);
+  if(/^RETRAIT D.ESPECES/i.test(d)){m=d.match(/HEURES\s+(?:\d+_)?(\S+)/i);return "Retrait d'espèces"+(m?" · "+titre(m[1]):"")}
+  if((m=d.match(/HEURES\s+(.+?)\s+(?:AVEC|NUMERO DE CARTE|PAIEMENT SANS|TITULAIRE|PAR WERO)/i)))return titre(m[1].replace(/^\d+_/,"").replace(/\s+(BE|FR|NL|LU|DE)\d{4}\b.*$/i,"").replace(/\s+IE[A-Z0-9]*\b.*$/i,"").replace(/\*/g," ").trim());
+  if(/^(FORFAIT|CONSOMMATION) .*COMPTE/i.test(d))return "Frais bancaires";
+  return titre(d.replace(/\b(BE|FR|NL|LU)\d{2}[\d ]{8,}/g,"").slice(0,45))}
+const MOTS_CAT=[[/delhaize|colruyt|aldi|lidl|carrefour|crf mkt|intermarche|spar|okay|match|proxy|albert heijn|cora|super|hopper/,"Courses"],[/total|shell|esso|q8|texaco|lukoil|dats|gabriels|octa|power|maes|station|air-serv|wash/,"Carburant"],[/sncb|nmbs|stib|mivb|tec|de lijn|parking|uber|bolt|indigo|peage|bebat/,"Transport"],[/quick|mcdo|mcdonald|burger|kfc|pizza|resto|restaurant|cafe|brasserie|deliveroo|uber eats|takeaway|snack|friterie/,"Resto"],[/pharma|apotheek|medecin|mutualite|mutualiteit|hopital|dentiste|kine/,"Santé"],[/proximus|orange|telenet|base|voo|scarlet|engie|luminus|totalenergies|eneco|vivaqua|swde|loyer|ikea|brico|gamma|hubo|action/,"Maison"],[/zara|h&m|primark|c&a|kiabi|jbc|decathlon|zalando|vinted/,"Vêtements"],[/netflix|spotify|disney|cinema|kinepolis|steam|playstation|xbox|basic.?fit|jims|fitness|google play|apple\.com|itunes/,"Loisirs"],[/cofidis|buy way|cetelem|credit|santander/,"Maison"]];
+function catDevine(t){t=nrm(t);if(/retrait d.especes/.test(t)&&cats().includes("Autre"))return "Autre";for(const [re,c] of MOTS_CAT)if(re.test(t)&&cats().includes(c))return c;return cats().includes("Autre")?"Autre":cats()[cats().length-1]}
 async function importCSV(f){
   openRaw(`<h3>Lecture du fichier <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Je lis tes opérations…</div>`);
-  let ops;try{ops=lireCSVBanque(await f.text())}catch(e){openRaw(`<h3>Import impossible <button class="del" data-close>×</button></h3><div class="est">${esc(e.message)}</div><p class="sub" style="margin-top:8px">Exporte le fichier au format CSV depuis ta banque en ligne (sur ordinateur), puis réessaie.</p>`);return}
-  ops=ops.slice(-400);
+  let ops;try{const buf=await f.arrayBuffer();let txt;try{txt=new TextDecoder("utf-8",{fatal:true}).decode(buf)}catch(e){txt=new TextDecoder("windows-1252").decode(buf)} // les banques belges exportent souvent en ISO-8859-1
+    ops=lireCSVBanque(txt)}catch(e){openRaw(`<h3>Import impossible <button class="del" data-close>×</button></h3><div class="est">${esc(e.message)}</div><p class="sub" style="margin-top:8px">Exporte le fichier au format CSV depuis ta banque en ligne (sur ordinateur), puis réessaie.</p>`);return}
+  ops.sort((x,y)=>y.date.localeCompare(x.date));ops=ops.slice(0,2000); // les plus récentes d'abord
   const near=(a,b,n)=>Math.abs(new Date(a)-new Date(b))<=n*864e5;
   releveRes=ops.map(o=>{const m=o.montant,lib=o.libelle;
     const dup=m<0?S.depenses.some(d=>near(d.date,o.date,3)&&Math.abs(+d.montant-Math.abs(m))<0.01):S.paies.some(p=>near(p.date,o.date,7)&&Math.abs(+p.montant-m)<0.01);
@@ -869,7 +879,7 @@ function afficherReleve(titre){
   const nSel=releveRes.filter(o=>!o.dup&&!o.interne&&(o.montant<0||o.salaire)).length;
   openRaw(`<h3>${esc(titre)} <button class="del" data-close>×</button></h3>
     <p class="sub" style="margin-bottom:6px">Coché par défaut : ${nSel} opération(s). Décochés : doublons, virements entre tes propres comptes (épargne…) et entrées qui ne sont pas des paies.</p>
-    <div class="two" style="margin-bottom:6px"><button type="button" class="btn sec sm" data-relall="1">Tout cocher</button><button type="button" class="btn sec sm" data-relall="0">Tout décocher</button></div>
+    <div class="chips" style="margin-bottom:6px"><button type="button" data-relper="0">Ce mois-ci</button><button type="button" data-relper="3">3 derniers mois</button><button type="button" data-relper="12">Tout</button><button type="button" data-relall="0">Rien</button></div>
     <form data-f="releve">${releveRes.map((o,i)=>`<div class="chk-row"><input type="checkbox" name="o${i}" ${!o.dup&&!o.interne&&(o.montant<0||o.salaire)?"checked":""}><div class="l"><b>${esc(o.libelle)}</b><small>${fmtD(o.date)} ${o.date.slice(0,4)} · ${o.interne?"🔄 virement entre tes comptes":o.montant>0?(o.salaire?"💶 paie":"entrée"):esc(o.cat)}${o.dup?" · déjà présent":""}</small></div><b class="${o.montant<0?"out":"pos"}">${o.montant>0?"+":""}${eur2(o.montant)}</b></div>`).join("")}
     <label class="chk" style="margin-top:8px"><input type="checkbox" name="anciennes" checked> Les paies d'avant ce mois-ci vont dans l'historique 📚 (hors budget)</label>
     <button class="btn" style="margin-top:10px">Importer la sélection</button></form>`)}
@@ -1326,6 +1336,9 @@ document.addEventListener("click",e=>{
   if(b.dataset.subign){S.subsIgnore.push(b.dataset.subign);save();return}
   if(b.dataset.share){routerPartage(b.dataset.share);return}
   if(b.dataset.relall){document.querySelectorAll('#sheet form[data-f="releve"] .chk-row input').forEach(x=>x.checked=b.dataset.relall==="1");return}
+  if(b.dataset.relper){const n=+b.dataset.relper,d=new Date();const lim=n?iso(new Date(d.getFullYear(),d.getMonth()-n+1,1)):mkey(d)+"-01";
+    document.querySelectorAll('#sheet form[data-f="releve"] .chk-row input').forEach((x,i)=>{const o=releveRes[i];x.checked=!!o&&(n===12||o.date>=lim)&&!o.dup&&!o.interne&&(o.montant<0||o.salaire)});
+    const nb=[...document.querySelectorAll('#sheet form[data-f="releve"] .chk-row input')].filter(x=>x.checked).length;toast(nb+" opération(s) cochée(s)");return}
   if(b.dataset.edit2){const[ty,id]=b.dataset.edit2.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.cdetail){const m=S.missions.find(x=>x.id===b.dataset.cdetail);if(m&&m.contrat)openRaw(`<h3>Contrat <button class="del" data-close>×</button></h3>${contratHTML(m.contrat)}`);return}
   if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
