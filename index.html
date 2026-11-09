@@ -121,6 +121,12 @@ nav button.on{color:var(--acc);background:var(--card)}
 
 #lock{position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;align-items:center;justify-content:center;padding:24px}
 #lock[hidden]{display:none!important}
+.sub-row{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}.sub-row:last-child{border-bottom:0}
+.sub-row .l{flex:1;min-width:0}.sub-row .l b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sub-row .l small{color:var(--mut);font-size:12px}
+.adm{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}.adm:last-child{border-bottom:0}
+.adm input{width:20px;height:20px;flex:none;margin-top:2px}.adm .d{font-size:12px;color:var(--acc);font-weight:800;white-space:nowrap;min-width:52px}
+.adm.done{opacity:.45}.adm.done b{text-decoration:line-through}
+.osm{font-size:10px;color:var(--mut);margin-top:6px}.osm a{color:var(--mut)}
 .pinpad{display:grid;grid-template-columns:repeat(3,72px);gap:14px;justify-content:center;margin-top:16px}
 .pinpad button{height:72px;border-radius:50%;border:0;background:var(--card2);color:var(--txt);font-size:26px;font-weight:700;font-family:inherit;cursor:pointer}
 .pinpad button:active{background:var(--acc)}
@@ -206,6 +212,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <div id="lock" hidden><div class="login-box" style="max-width:300px;margin:auto;text-align:center">
   <div style="font-size:44px">🔒</div><h1 style="margin:10px 0 16px">Budget <span>Intérim</span></h1>
   <div id="pinDots" style="font-size:30px;letter-spacing:12px;height:40px">○○○○</div>
+  <button type="button" id="bBioUnlock" class="btn sec" hidden style="width:auto;margin:6px auto 0;display:block">👆 Utiliser l'empreinte</button>
   <div id="pinPad" class="pinpad"></div><p class="sub" id="pinMsg" style="color:var(--bad);height:20px"></p></div></div>
 <div id="updBanner" hidden><span>✨ Nouvelle version disponible</span><button class="btn sm updBtn" style="background:#fff;color:var(--acc)">Mettre à jour</button></div>
 <header>
@@ -241,6 +248,13 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     </div>
 
     <div id="alerts"></div>
+
+    <div class="card" id="scoreCard">
+      <div style="display:flex;gap:14px;align-items:center">
+        <div id="scoreRing" style="flex:none"></div>
+        <div style="flex:1;min-width:0"><div class="k">❤️ Santé financière du mois</div><div class="v" id="scoreLbl" style="font-size:20px">—</div><div class="sub" id="scoreTips"></div></div>
+      </div>
+    </div>
 
     <div class="card" id="weekCard" hidden>
       <div class="k">📅 Ta semaine</div>
@@ -286,6 +300,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <h2>Charges fixes (chaque mois)</h2>
     <div class="card" id="fixes"></div>
     <button class="btn sec" data-open="fixe">+ Charge fixe</button>
+    <div id="subsBox"></div>
     <h2 style="display:flex;justify-content:space-between;align-items:center">Budgets du mois <button class="btn sec sm" data-open="budgets">Modifier</button></h2>
     <div class="card" id="budgets"></div>
     <h2>Dépenses du mois</h2>
@@ -316,6 +331,12 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <div class="sub" id="calSub" style="margin-top:8px"></div>
       <button class="btn sec sm" data-open="pointage" style="margin-top:10px">+ Pointer des heures</button>
     </div>
+
+    <h2>🚗 Trajets</h2>
+    <div class="card" id="trajetCard"></div>
+
+    <h2>📋 Démarches à ne pas oublier</h2>
+    <div class="card" id="adminCard"></div>
 
     <h2>🎁 Prime de fin d'année</h2>
     <div class="card" id="primeCard"></div>
@@ -379,6 +400,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <h2>Export</h2>
     <div class="card">
       <p class="sub" style="margin-bottom:10px">Toutes tes paies et dépenses de l'année en tableau (Excel, Google Sheets), pratique pour ta déclaration d'impôts.</p>
+      <button class="btn" id="bPdf" style="margin-bottom:10px">📄 Bilan PDF du mois</button>
       <button class="btn sec" id="bCsv">Télécharger le CSV de l'année</button>
     </div>
   </section>
@@ -392,6 +414,8 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
         <label>Mettre de côté sur chaque paie (%)<input type="number" step="1" inputmode="numeric" id="sPct"></label>
         <label>Coussin visé (mois de charges)<input type="number" step="1" inputmode="numeric" id="sMois"></label>
         <label>Ratio net / brut estimé (%)<input type="number" step="1" inputmode="numeric" id="sRatio"></label>
+        <label>Mon adresse de départ (domicile)<input id="sDomicile" placeholder="ex. Rue de la Gare 10, 1070 Anderlecht" autocomplete="street-address"></label>
+        <div class="two"><label>Conso voiture (L/100 km)<input type="number" step="0.1" inputmode="decimal" id="sConso"></label><label>Prix carburant (€/L)<input type="number" step="0.01" inputmode="decimal" id="sCarbu"></label></div>
         <label>Statut d'intérimaire<select id="sStatut"><option value="ouvrier">Ouvrier</option><option value="employe">Employé</option></select></label>
         <button class="btn">Enregistrer</button>
       </form>
@@ -404,6 +428,8 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <div class="card">
       <button class="btn sec" id="bPin">🔒 Code PIN</button>
       <p class="sub" id="pinState" style="margin:6px 0 12px"></p>
+      <button class="btn sec" id="bBio" hidden style="margin-bottom:6px">👆 Déverrouiller avec l'empreinte</button>
+      <p class="sub" id="bioState" style="margin:0 0 12px" hidden></p>
       <button class="btn sec" id="bNotif">🔔 Activer les rappels</button>
       <p class="sub" id="notifState" style="margin-top:6px"></p>
     </div>
@@ -422,7 +448,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 12</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 13</p>
     </div>
   </section>
 </main>
@@ -444,6 +470,6 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=12"></script>
+<script type="module" src="app.js?v=13"></script>
 </body>
 </html>

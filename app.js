@@ -3,9 +3,9 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=12";
+import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=13";
 
-const APP_VERSION=12;
+const APP_VERSION=13;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -13,7 +13,7 @@ function hideSplash(){if(splashGone)return;splashGone=true;const el=document.get
 setTimeout(hideSplash,6000);
 const DEFAULT_CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
 const cats=()=>(S.cats&&S.cats.length?S.cats:DEFAULT_CATS);
-const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],pointage:[],cr:[],dettes:[],defi:[],cats:null,reglages:{epargne:0,pct:10,mois:3,ratio:78,statut:"ouvrier"}};
+const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],pointage:[],cr:[],dettes:[],defi:[],cats:null,reglages:{epargne:0,pct:10,mois:3,ratio:78,statut:"ouvrier",domicile:"",conso:6.5,carbu:1.8},adminDone:{},subsIgnore:[]};
 let S=JSON.parse(JSON.stringify(DEF));
 let cur=new Date();cur.setDate(1);
 const $=id=>document.getElementById(id);
@@ -34,7 +34,7 @@ const isDate=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s);
 function clean(arr,needDate=true){return (Array.isArray(arr)?arr:[]).filter(x=>x&&typeof x==="object").map(x=>{if(!x.id)x.id=uid();if(needDate&&!isDate(x.date))x.date=today();return x})}
 function normalize(d){d=d||{};const n=normalize0(d);["paies","depenses","pointage","epargneLog","cr","dettes"].forEach(k=>n[k]=clean(n[k]));["missions","fixes","objectifs"].forEach(k=>n[k]=clean(n[k],false));
   if(!Array.isArray(n.defi))n.defi=[];if(!n.budgets||typeof n.budgets!=="object")n.budgets={};if(n.cats&&!Array.isArray(n.cats))n.cats=null;return n}
-function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],defi:d.defi||[],cats:d.cats||null,reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
+function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
 const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
@@ -110,7 +110,7 @@ $("bLogout").onclick=()=>signOut(auth);
 async function forceUpdate(){
   document.querySelectorAll(".updBtn").forEach(b=>b.classList.add("spin-it"));
   try{const regs=navigator.serviceWorker?await navigator.serviceWorker.getRegistrations():[];for(const r of regs)await r.unregister();
-    if(window.caches){const ks=await caches.keys();await Promise.all(ks.filter(k=>k!=="rappels").map(k=>caches.delete(k)))}}catch(e){}
+    if(window.caches){const ks=await caches.keys();await Promise.all(ks.filter(k=>k!=="rappels"&&k!=="share").map(k=>caches.delete(k)))}}catch(e){}
   location.replace(location.pathname+"?maj="+Date.now());
 }
 async function checkUpdate(){
@@ -189,6 +189,7 @@ function render(){
   Object.entries(S.budgets).forEach(([c,lim])=>{if(!(+lim>0))return;const sp=sum(M.d.filter(x=>x.cat===c),x=>x.montant);const p=sp/lim;
     if(p>=1)A.push(["bad",`Budget ${c} dépassé`,`${eur(sp)} dépensés pour ${eur(lim)} prévus (+${eur(sp-lim)}).`]);
     else if(p>=.85)A.push(["",`Budget ${c} presque atteint`,`${eur(sp)} sur ${eur(lim)} — il reste ${eur(lim-sp)}.`])});
+  demarchesProches().filter(x=>!x.done&&x.date<=t).slice(0,2).forEach(x=>A.push(["",x.t,x.b+" <small>(coche-la dans Outils → Démarches)</small>"]));
   const deja=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)&&x.montant>0),x=>x.montant);
   const aside=Math.max(0,M.recu*R.pct/100-deja);
   if(aside>=1&&R.pct>0) A.push(["ok",`Mets ${eur(aside)} de côté`,`${R.pct}% de tes paies reçues ce mois, pour tenir pendant les périodes sans mission.`,`<button class="btn sm" data-open="epargne" data-amt="${aside.toFixed(2)}" style="margin-top:10px">C'est fait</button>`]);
@@ -228,7 +229,7 @@ function render(){
     const on=(!m.debut||m.debut<=t)&&(!m.fin||m.fin>=t);
     const h=sum(S.paies.filter(p=>p.mission===m.id),p=>p.heures);
     return row("mission:"+m.id,`<b>${m.contrat||m.photo?"📑 ":""}${esc(m.client||"Mission")}${on?'<span class="pill g">en cours</span>':(m.debut>t?'<span class="pill y">à venir</span>':'')}</b>
-    <small>${esc(m.agence)} · ${fmtD(m.debut)}${m.fin?" → "+fmtD(m.fin):" → ?"}${m.taux?" · "+eurT(m.taux)+"/h":""}</small><br><small>Reçu : ${eur(missionPaid(m))}${h?" · "+fmtN(h)+" h":""}</small>`,
+    <small>${esc(m.agence)} · ${fmtD(m.debut)}${m.fin?" → "+fmtD(m.fin):" → ?"}${m.taux?" · "+eurT(m.taux)+"/h":""}</small><br><small>Reçu : ${eur(missionPaid(m))}${h?" · "+fmtN(h)+" h":""}${+m.km>0?" · 🚗 "+fmtN(m.km)+" km ≈ "+eur2(coutJour(m))+"/j":""}</small>`,
     `<button class="btn sm" data-paie="${m.id}">+ Paie</button><button class="del" data-del="missions:${m.id}">×</button>`)}).join(""):`<div class="empty">Aucune mission</div>`;
 
   // paies
@@ -251,9 +252,9 @@ function render(){
   const dm=[...dl].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,q?100:500);
   $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${d.photo?"🖼️ ":d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe&&S.fixes.some(f=>f.id===d.fixe)?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
 
-  renderStats();renderOutils();renderExtras(M,k);renderPrevision();renderSettings();
+  renderStats();renderOutils();renderExtras(M,k);renderPrevision();renderSettings();renderTrajets();renderDemarches();renderScore(M,k);renderSubs();
   // réglages
-  if(document.activeElement?.closest?.("#fSet")==null){$("sEpargne").value=R.epargne;$("sPct").value=R.pct;$("sMois").value=R.mois;$("sRatio").value=R.ratio;$("sStatut").value=R.statut||"ouvrier"}
+  if(document.activeElement?.closest?.("#fSet")==null){$("sEpargne").value=R.epargne;$("sPct").value=R.pct;$("sMois").value=R.mois;$("sRatio").value=R.ratio;$("sStatut").value=R.statut||"ouvrier";$("sDomicile").value=R.domicile||"";$("sConso").value=R.conso;$("sCarbu").value=R.carbu}
 }
 
 function renderStats(){
@@ -438,17 +439,18 @@ $("pinPad").onclick=async e=>{const b=e.target.closest("[data-pin]");if(!b)retur
   if(pinBuf.length<4)pinBuf+=k;drawPin();if(pinBuf.length<4)return;
   if(pinMode==="unlock"){if(await hashPin(pinBuf)===LS.get("pinHash","")){$("lock").hidden=true;LS.set("pinTries",0)}else{pinBuf="";setTimeout(drawPin,200);$("pinMsg").textContent="Code incorrect"}}
   else if(pinMode==="set1"){pinFirst=pinBuf;showPad("set2")}
-  else if(pinMode==="set2"){if(pinBuf===pinFirst){LS.set("pinHash",await hashPin(pinBuf));$("lock").hidden=true;renderSettings();toast("Code PIN activé 🔒")}else{showPad("set1");$("pinMsg").textContent="Les codes ne correspondent pas, recommence"}}
+  else if(pinMode==="set2"){if(pinBuf===pinFirst){LS.set("pinHash",await hashPin(pinBuf));$("lock").hidden=true;renderSettings();renderBio();toast("Code PIN activé 🔒")}else{showPad("set1");$("pinMsg").textContent="Les codes ne correspondent pas, recommence"}}
 };
-$("bPin").onclick=()=>{if(LS.get("pinHash",null)){LS.set("pinHash",null);renderSettings();toast("Code PIN retiré")}else showPad("set1")};
-let hiddenAt=0;document.addEventListener("visibilitychange",()=>{if(document.hidden)hiddenAt=Date.now();else if(LS.get("pinHash",null)&&hiddenAt&&Date.now()-hiddenAt>3*60e3)showPad("unlock")});
-if(LS.get("pinHash",null))showPad("unlock");
+$("bPin").onclick=()=>{if(LS.get("pinHash",null)){LS.set("pinHash",null);LS.set("bioId",null);renderSettings();renderBio();toast("Code PIN retiré")}else showPad("set1")};
+let hiddenAt=0;document.addEventListener("visibilitychange",()=>{if(document.hidden)hiddenAt=Date.now();else if(LS.get("pinHash",null)&&hiddenAt&&Date.now()-hiddenAt>3*60e3){showPad("unlock");if(LS.get("bioId",null))setTimeout(bioDeverrouiller,300)}});
+if(LS.get("pinHash",null)){showPad("unlock");if(LS.get("bioId",null))setTimeout(bioDeverrouiller,400)}
 // rappels : calculés ici, stockés pour le service worker (notifications même appli fermée si le téléphone le permet)
 function rappels(){const t=today(),L=[],add=(id,date,title,body)=>L.push({id,date,title,body});
   S.depenses.filter(x=>x.paye===false&&x.echeance).forEach(x=>{const d=new Date(x.echeance+"T12:00");d.setDate(d.getDate()-3);add("f3-"+x.id,iso(d),"🧾 Facture à payer",`${x.note||x.cat} : ${eur2(x.montant)} avant le ${fmtD(x.echeance)}`);add("f0-"+x.id,x.echeance,"⚠️ Facture à payer aujourd'hui",`${x.note||x.cat} : ${eur2(x.montant)}`)});
   S.missions.filter(m=>m.fin&&m.fin>=t).forEach(m=>{const d=new Date(m.fin+"T12:00");d.setDate(d.getDate()-3);add("m-"+m.id+m.fin,iso(d),"🏭 Fin de mission bientôt",`${m.client||m.agence} se termine le ${fmtD(m.fin)}. Pense à relancer ton agence.`)});
   const n=new Date();S.fixes.filter(f=>+f.jour>0).forEach(f=>{for(const off of [0,1]){const d=new Date(n.getFullYear(),n.getMonth()+off,+f.jour-1,12);add("p-"+f.id+iso(d),iso(d),"🔁 Prélèvement demain",`${f.nom} : ${eur2(f.montant)}`)}});
   S.cr.forEach(l=>{const e=new Date(l.date+"T12:00");e.setFullYear(e.getFullYear()+1);e.setDate(e.getDate()-14);if((+l.nb||0)-(+l.used||0)>0)add("cr-"+l.id,iso(e),"🍽️ Chèques-repas","Des chèques-repas expirent dans 2 semaines.")});
+  demarchesProches().filter(x=>!x.done).forEach(x=>add("adm-"+x.k,x.date,x.t,x.b.slice(0,120)));
   return L.filter(x=>x.date>=iso(new Date(Date.now()-864e5)))}
 async function syncRappels(){try{if(!("caches" in window))return;const c=await caches.open("rappels");await c.put("rappels.json",new Response(JSON.stringify(rappels()),{headers:{"content-type":"application/json"}}))}catch(e){}}
 async function notifierMaintenant(){if(!("Notification" in window)||Notification.permission!=="granted")return;const t=today(),vus=LS.get("notifVus",[]);
@@ -458,7 +460,8 @@ async function notifierMaintenant(){if(!("Notification" in window)||Notification
 $("bNotif").onclick=async()=>{if(!("Notification" in window))return;const p=await Notification.requestPermission();
   if(p==="granted"){try{const reg=await navigator.serviceWorker.ready;if(reg.periodicSync)await reg.periodicSync.register("rappels",{minInterval:12*3600e3})}catch(e){}syncRappels();notifierMaintenant();toast("Rappels activés 🔔")}renderSettings()};
 // raccourcis (appui long sur l'icône)
-function raccourci(){const a=new URLSearchParams(location.search).get("a");if(!a)return;history.replaceState(null,"",location.pathname);
+function raccourci(){const qs=new URLSearchParams(location.search);if(qs.get("share")){history.replaceState(null,"",location.pathname);gererPartage();return}
+  const a=qs.get("a");if(!a)return;history.replaceState(null,"",location.pathname);
   if(a==="depense")openSheet("depense");else if(a==="pointage")openSheet("pointage");
   else if(a==="facture")pickSource("Scanner une facture / un ticket",f=>scanFacture(f));else if(a==="paie")pickSource("Scanner une fiche de paie",f=>scanFile(f));else if(a==="contrat")pickSource("Scanner un contrat",f=>scanContrat(f))}
 
@@ -469,7 +472,7 @@ function resumeDonnees(){
   L.push("Charges fixes mensuelles : "+(S.fixes.map(f=>`${f.nom} ${eur2(f.montant)}`).join(", ")||"aucune")+` (total ${eur2(fixesTotal())}).`);
   if(Object.keys(S.budgets).length)L.push("Budgets mensuels : "+Object.entries(S.budgets).map(([c,v])=>`${c} ${eur(v)}`).join(", "));
   if(S.objectifs.length)L.push("Objectifs : "+S.objectifs.map(o=>`${o.nom} ${eur(o.actuel||0)}/${eur(o.cible)}${o.echeance?" pour le "+o.echeance:""}`).join(", "));
-  const act=S.missions.filter(m=>!m.fin||m.fin>=today());L.push("Missions en cours/à venir : "+(act.map(m=>`${m.client||""} (${m.agence}) ${m.taux?m.taux+" €/h brut":""}${m.hsem?" "+m.hsem+" h/sem":""} ${m.debut||""}→${m.fin||"?"}${m.contrat&&m.contrat.horaire?" horaire "+m.contrat.horaire:""}`).join("; ")||"aucune"));
+  const act=S.missions.filter(m=>!m.fin||m.fin>=today());L.push("Missions en cours/à venir : "+(act.map(m=>`${m.client||""} (${m.agence}) ${m.taux?m.taux+" €/h brut":""}${m.hsem?" "+m.hsem+" h/sem":""} ${m.debut||""}→${m.fin||"?"}${m.contrat&&m.contrat.horaire?" horaire "+m.contrat.horaire:""}${+m.km>0?" trajet "+m.km+" km aller ("+eur2(coutJour(m))+"/jour)":""}`).join("; ")||"aucune"));
   const ms=[];for(let i=0;i<6;i++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const k=mkey(d),x=monthData(k),c={};x.d.forEach(e=>c[e.cat]=(c[e.cat]||0)+(+e.montant||0));
     ms.push(`${k} : revenus ${eur(x.recu+x.att)}, dépenses variables ${eur(x.var_)} [${Object.entries(c).map(([n,v])=>n+" "+eur(v)).join(", ")}]`)}
   L.push("Par mois :\n"+ms.join("\n"));
@@ -603,11 +606,165 @@ function showContrat(r){
 function saveContrat(f,d){const r=contratRes;if(!r)return;
   let m=d.mission==="__new"?null:S.missions.find(x=>x.id===d.mission);
   if(!m){m={id:uid()};S.missions.push(m)}
-  Object.assign(m,{agence:d.agence,client:d.client||"",debut:d.debut||"",fin:d.fin||"",taux:d.taux?+d.taux:(m.taux||0),hsem:d.hsem?+d.hsem:(m.hsem||""),contrat:r});
+  Object.assign(m,{agence:d.agence,client:d.client||"",debut:d.debut||"",fin:d.fin||"",taux:d.taux?+d.taux:(m.taux||0),hsem:d.hsem?+d.hsem:(m.hsem||""),contrat:r});if(!m.adresse&&r.lieu)m.adresse=r.lieu;
   if(f.statut&&f.statut.checked)S.reglages.statut=/empl/i.test(r.statut)?"employe":"ouvrier";
   if(lastFile){const file=lastFile,mid=m.id;lastFile=null;savePhoto(file).then(ph=>{const x=S.missions.find(x=>x.id===mid);if(ph&&x){if(x.photo)delPhoto(x.photo);x.photo=ph;save()}})}
   contratRes=null;closeSheet();save();toast(d.mission==="__new"?"Mission créée depuis le contrat ✓":"Mission mise à jour ✓");
 }
+
+/* ---------- trajets (OpenStreetMap : Nominatim + OSRM, uniquement sur demande) ---------- */
+// Règles Nominatim : 1 requête/s max, pas d'autocomplétion ni de requêtes en masse, attribution OSM.
+const geoCache={};let lastGeo=0;
+async function geocode(q){q=q.trim();if(!q)throw new Error("adresse vide");if(geoCache[q])return geoCache[q];
+  const wait=1100-(Date.now()-lastGeo);if(wait>0)await new Promise(r=>setTimeout(r,wait));lastGeo=Date.now();
+  const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=fr&countrycodes=be,fr,nl,lu,de&q="+encodeURIComponent(q));
+  if(!r.ok)throw new Error("géocodage "+r.status);const j=await r.json();if(!j.length)throw new Error("Adresse introuvable : « "+q+" »");
+  return geoCache[q]={lat:+j[0].lat,lon:+j[0].lon,nom:j[0].display_name}}
+function vol(a,b){const R=6371,t=x=>x*Math.PI/180,dl=t(b.lat-a.lat),dn=t(b.lon-a.lon),h=Math.sin(dl/2)**2+Math.cos(t(a.lat))*Math.cos(t(b.lat))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+async function distanceRoute(dep,arr){const A=await geocode(dep),B=await geocode(arr);
+  try{const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${A.lon},${A.lat};${B.lon},${B.lat}?overview=false`);const j=await r.json();
+    if(j.code==="Ok"&&j.routes&&j.routes[0])return{km:Math.round(j.routes[0].distance/100)/10,min:Math.round(j.routes[0].duration/60),src:"route"}}catch(e){}
+  return{km:Math.round(vol(A,B)*1.3*10)/10,min:null,src:"estimé"}}
+const coutKm=()=>(+S.reglages.conso||6.5)/100*(+S.reglages.carbu||1.8);
+const coutJour=m=>+m.km>0?2*m.km*coutKm():0;
+function primeMobilite(m){const p=[...S.paies].filter(p=>p.mission===m.id&&p.detail&&Array.isArray(p.detail.lignes)).sort((a,b)=>b.date.localeCompare(a.date))[0];
+  if(!p)return null;const l=p.detail.lignes.filter(l=>/mobilit|déplacement|deplacement|transport|km/i.test(l.libelle)&&l.type!=="retenue");if(!l.length)return null;
+  const jours=(p.detail.jours&&p.detail.jours.length)||Math.max(1,Math.round((+p.heures||38)/7.6));
+  const vus=new Set();const tot=sum(l.filter(x=>{const k=Math.round(x.montant*100);if(vus.has(k))return false;vus.add(k);return true}),x=>x.montant); // évite les doublons imposable/net
+  return{parJour:tot/jours,total:tot,jours}}
+function renderTrajets(){
+  const t=today(),act=S.missions.filter(m=>(!m.fin||m.fin>=t));
+  if(!act.length){$("trajetCard").innerHTML=`<div class="empty">Ajoute une mission pour calculer le coût de tes trajets.</div>`;return}
+  $("trajetCard").innerHTML=act.map(m=>{
+    if(!(+m.km>0))return `<div class="sub-row"><div class="l"><b>${esc(m.client||m.agence)}</b><small>Trajet pas encore calculé</small></div><button class="btn sec sm" data-edit2="mission:${m.id}">📍 Calculer</button></div>`;
+    const cj=coutJour(m),js=m.hsem?Math.max(1,Math.round(+m.hsem/7.6)):5,netH=m.taux?m.taux*S.reglages.ratio/100:0,hj=m.hsem?+m.hsem/js:7.6;
+    const pm=primeMobilite(m);
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(m.client||m.agence)}</b><span class="sub">${fmtN(m.km)} km${m.min?" · "+m.min+" min":""} (aller)</span></div>
+      <div class="grid" style="margin-top:8px"><div><div class="sub">Coût par jour (A/R)</div><div class="v out" style="font-size:19px">${eur2(cj)}</div></div><div><div class="sub">Par mois (≈ ${Math.round(js*4.33)} j)</div><div class="v out" style="font-size:19px">${eur(cj*js*4.33)}</div></div></div>
+      ${netH?`<div class="sub" style="margin-top:6px">Net réel après trajet : ≈ <b style="color:var(--txt)">${eur2(netH-cj/hj)}/h</b> au lieu de ${eur2(netH)}/h · le trajet mange ${Math.round(cj/(netH*hj)*100)} % de ta journée.</div>`:""}
+      ${pm?`<div class="${pm.parJour>=cj?"okbox":"warnbox"}" style="margin:8px 0 0">Prime de mobilité ≈ ${eur2(pm.parJour)}/jour (dernière fiche) : elle couvre ${Math.round(pm.parJour/cj*100)} % de ton carburant.</div>`:""}
+    </div>`}).join("")+`<p class="osm">Distances © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">contributeurs OpenStreetMap</a> · calcul ${eur2(coutKm())}/km (${fmtN(S.reglages.conso)} L/100 km × ${eur2(S.reglages.carbu)}/L, modifiable dans Réglages)</p>`;
+}
+async function calcTrajet(){const dep=$("fDep").value.trim(),arr=$("fArr").value.trim(),out=$("trajRes");
+  if(!dep||!arr){out.textContent="Indique les deux adresses.";return}
+  $("bCalc").disabled=true;out.innerHTML=`<span class="spin"></span>Calcul de l'itinéraire…`;
+  try{const r=await distanceRoute(dep,arr);$("fKm").value=r.km;$("fMin").value=r.min||"";
+    out.innerHTML=`🚗 <b>${fmtN(r.km)} km</b>${r.min?" · "+r.min+" min":""} aller${r.src==="estimé"?" (estimation à vol d'oiseau, service d'itinéraire indisponible)":""} → ≈ <b>${eur2(2*r.km*coutKm())}</b> de carburant par jour (aller-retour)`}
+  catch(e){out.textContent=/introuvable/.test(e.message)?e.message+" : précise la ville ou le code postal.":"Calcul impossible (connexion ?). Tu peux taper les km toi-même."}
+  $("bCalc").disabled=false}
+
+/* ---------- démarches administratives (Belgique) ---------- */
+function demarches(y){const L=[
+  {k:"bak"+y,date:y+"-01-10",t:"💾 Archive ton année "+(y-1),b:"Télécharge le CSV et le bilan PDF de "+(y-1)+" (onglet Stats) pour tes archives."},
+  {k:"281-"+y,date:y+"-03-05",t:"📄 Fiches fiscales 281.10",b:"Chaque agence doit t'envoyer ta fiche 281.10 de "+(y-1)+". Vérifie que tu en as bien une par agence : elles servent pour ta déclaration."},
+  {k:"tax-"+y,date:y+"-05-15",t:"🧾 Déclaration d'impôts",b:"La déclaration (MyMinfin / Tax-on-web) est en général ouverte. Compare les montants préremplis avec tes 281.10 et note la date limite affichée sur MyMinfin."},
+  {k:"tax2-"+y,date:y+"-07-01",t:"⏰ Déclaration envoyée ?",b:"Si ce n'est pas encore fait, vérifie la date limite sur MyMinfin et envoie ta déclaration."},
+  {k:"fds-"+y,date:y+"-12-05",t:"🎁 Document de prime de fin d'année",b:"Le Fonds social des intérimaires envoie le document début décembre. Pas reçu vers le 15 décembre ? Demande un duplicata."}];
+  if(S.reglages.statut!=="employe")L.splice(3,0,{k:"onva-"+y,date:y+"-04-15",t:"🏖️ Pécule de vacances (ONVA)",b:"L'ONVA paie le pécule en mai ou juin. Vérifie ton compte de vacances et ton numéro de compte bancaire."});
+  return L}
+function demarchesProches(){const y=new Date().getFullYear(),t=today();return [...demarches(y),...demarches(y+1)].map(x=>({...x,done:!!S.adminDone[x.k]})).filter(x=>{const e=new Date(x.date+"T12:00");e.setDate(e.getDate()+45);return iso(e)>=t}).slice(0,5)}
+function renderDemarches(){const L=demarchesProches(),t=today();
+  $("adminCard").innerHTML=L.map(x=>`<label class="adm ${x.done?"done":""}"><input type="checkbox" data-admin="${x.k}" ${x.done?"checked":""}><div style="flex:1"><b>${x.t}</b><div class="sub">${x.b}</div></div><span class="d">${x.date<=t?"maintenant":fmtD(x.date)}</span></label>`).join("")+`<p class="sub" style="margin-top:8px">Coche une démarche quand elle est faite. Les dates sont indicatives : vérifie toujours sur les sites officiels.</p>`}
+
+/* ---------- abonnements détectés ---------- */
+const SUB_STOP=new Set("com be fr nl eu www sa nv bv srl sprl ab ltd inc gmbh payment paiement payments sepa domiciliation dom carte achat bancontact visa maestro the le la les de du des et".split(" "));
+const subKey=s=>{const w=String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[0-9#*/._\-:,'()]+/g," ").split(/\s+/).filter(x=>x&&!SUB_STOP.has(x));
+  if(!w.length)return "";return w[0].length>=5?w[0]:w.slice(0,2).join(" ")};
+const lie=x=>x.fixe&&S.fixes.some(f=>f.id===x.fixe);
+function autoLink(d){if(d.fixe||!d.note)return;const k=subKey(d.note);if(k.length<3)return;const f=S.fixes.find(f=>subKey(f.nom)===k);if(f)d.fixe=f.id}
+function detectSubs(){
+  const lim=iso(new Date(new Date().getFullYear(),new Date().getMonth()-6,1)),G={};
+  S.depenses.filter(d=>d.date>=lim&&d.note&&!lie(d)).forEach(d=>{const k=subKey(d.note);if(k.length<3)return;(G[k]=G[k]||[]).push(d)});
+  const fixK=new Set(S.fixes.map(f=>subKey(f.nom)));
+  return Object.entries(G).filter(([k,L])=>{if(fixK.has(k)||S.subsIgnore.includes(k))return false;
+    const mois=new Set(L.map(d=>d.date.slice(0,7)));if(mois.size<2||mois.size!==L.length)return false; // une fois par mois, au moins 2 mois
+    const v=L.map(d=>+d.montant).sort((a,b)=>a-b),med=v[Math.floor(v.length/2)];return v.every(x=>Math.abs(x-med)<=Math.max(1,med*0.15))})
+   .map(([k,L])=>{const v=L.map(d=>+d.montant).sort((a,b)=>a-b),last=[...L].sort((a,b)=>b.date.localeCompare(a.date))[0];return{k,nom:last.note,montant:v[Math.floor(v.length/2)],n:L.length,jour:+last.date.slice(8,10),cat:last.cat}})}
+function renderSubs(){const L=detectSubs();
+  $("subsBox").innerHTML=L.length?`<h2>🔁 Abonnements détectés</h2><div class="card"><p class="sub" style="margin-bottom:4px">Ces dépenses reviennent chaque mois au même prix. En faire des charges fixes rend ton budget plus juste.</p>
+    ${L.map(s=>`<div class="sub-row"><div class="l"><b>${esc(s.nom)}</b><small>${eur2(s.montant)}/mois · vu ${s.n} mois · vers le ${s.jour}</small></div><button class="btn sm" data-subadd="${esc(s.k)}" style="width:auto">+ Fixe</button><button class="del" data-subign="${esc(s.k)}" title="Ignorer">×</button></div>`).join("")}</div>`:"";}
+function addSub(k){const s=detectSubs().find(x=>x.k===k);if(!s)return;const id=uid();
+  S.fixes.push({id,nom:s.nom,montant:Math.round(s.montant*100)/100,jour:s.jour||""});
+  S.depenses.forEach(d=>{if(!lie(d)&&subKey(d.note)===k)d.fixe=id});save();toast("« "+s.nom+" » ajouté aux charges fixes ✓")}
+
+/* ---------- score de santé financière ---------- */
+function calcScore(M,k){const R=S.reglages,fx=fixesTotal(),t=today(),parts=[];
+  const ep=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)&&x.montant>0),x=>x.montant),obj=M.recu*(R.pct||10)/100;
+  parts.push({n:"Épargne du mois",max:25,v:M.recu>0?Math.min(1,obj?ep/obj:1)*25:12,tip:obj>ep?`Mets ${eur(obj-ep)} de côté pour atteindre tes ${R.pct} %.`:""});
+  const cib=fx*(R.mois||3);parts.push({n:"Coussin de sécurité",max:25,v:fx?Math.min(1,R.epargne/cib)*25:(R.epargne>0?18:8),tip:fx&&R.epargne<cib?`Ton coussin couvre ${(R.epargne/fx).toLocaleString("fr-BE",{maximumFractionDigits:1})} mois sur ${R.mois} visés.`:""});
+  const reste=M.recu+M.att-M.dep;parts.push({n:"Reste à vivre",max:20,v:reste>=0?20:Math.max(0,20+reste/Math.max(300,fx)*20),tip:reste<0?`Tu dépenses ${eur(-reste)} de plus que tes revenus ce mois-ci.`:""});
+  const bl=Object.entries(S.budgets).filter(([,v])=>+v>0),ok=bl.filter(([c,v])=>sum(M.d.filter(x=>x.cat===c),x=>x.montant)<=v).length,over=bl.filter(([c,v])=>sum(M.d.filter(x=>x.cat===c),x=>x.montant)>v);
+  parts.push({n:"Budgets",max:15,v:bl.length?ok/bl.length*15:9,tip:over.length?`Budget dépassé : ${over.map(x=>x[0]).join(", ")}.`:bl.length?"":"Fixe des budgets par catégorie pour mieux te suivre."});
+  const late=S.depenses.filter(x=>x.paye===false&&x.echeance&&x.echeance<t).length+S.paies.filter(p=>!p.recu&&p.date<t).length;
+  parts.push({n:"Retards",max:15,v:Math.max(0,15-late*5),tip:late?`${late} facture(s) ou paie(s) en retard à régler.`:""});
+  const score=Math.round(sum(parts,p=>p.v));return{score,parts}}
+function renderScore(M,k){const {score,parts}=calcScore(M,k);
+  const lbl=score>=80?"Excellent 💪":score>=60?"Correct 👍":score>=40?"Fragile ⚠️":"À surveiller 🚨",col=score>=80?"var(--pos)":score>=60?"#f4f4f5":score>=40?"var(--warn)":"var(--bad)";
+  const r=30,C=2*Math.PI*r,len=score/100*C;
+  $("scoreRing").innerHTML=`<svg width="78" height="78" viewBox="0 0 78 78"><circle cx="39" cy="39" r="${r}" fill="none" stroke="#24242a" stroke-width="8"/><circle cx="39" cy="39" r="${r}" fill="none" stroke="${col}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${len} ${C}" transform="rotate(-90 39 39)"/><text x="39" y="45" text-anchor="middle" fill="#f4f4f5" font-size="20" font-weight="800">${score}</text></svg>`;
+  $("scoreLbl").textContent=lbl;
+  const tips=[...parts].sort((a,b)=>a.v/a.max-b.v/b.max).filter(p=>p.tip&&p.v<p.max*0.9).slice(0,2).map(p=>"• "+p.tip);
+  $("scoreTips").innerHTML=tips.length?tips.map(esc).join("<br>"):"Tout est au vert ce mois-ci, continue comme ça !";}
+
+/* ---------- bilan PDF du mois ---------- */
+function loadScript(src){return new Promise((ok,ko)=>{if(document.querySelector(`script[src="${src}"]`)){ok();return}const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=()=>ko(new Error("chargement "+src));document.head.appendChild(s)})}
+const pdfTxt=s=>String(s??"").replace(/[  ]/g," ").replace(/[^\x00-\xff€’–—…]/g,"").trim();
+async function bilanPDF(){
+  const btn=$("bPdf");btn.disabled=true;btn.textContent="⏳ Création du PDF…";
+  try{
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js");
+    const {jsPDF}=window.jspdf,docp=new jsPDF({unit:"mm",format:"a4"}),k=mkey(cur),M=monthData(k),R=S.reglages,E=x=>pdfTxt(eur2(x));
+    const mois=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"}),red=[239,35,60],W=210;
+    docp.setFillColor(...red);docp.rect(0,0,W,30,"F");docp.setTextColor(255);docp.setFont("helvetica","bold");docp.setFontSize(20);docp.text("Budget Intérim",14,14);
+    docp.setFontSize(12);docp.setFont("helvetica","normal");docp.text(pdfTxt("Bilan de "+mois),14,22);docp.text(pdfTxt(($("who").textContent||"").replace("Connecté : ","")),W-14,22,{align:"right"});
+    const {score}=calcScore(M,k),ep=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)),x=>x.montant),reste=M.recu+M.att-M.dep;
+    const tbl=(y,head,body,opt={})=>{docp.autoTable({startY:y,head:[head],body,theme:"grid",styles:{fontSize:9,cellPadding:2,textColor:30},headStyles:{fillColor:[24,24,28],textColor:255},alternateRowStyles:{fillColor:[247,247,248]},margin:{left:14,right:14},...opt});return docp.lastAutoTable.finalY+8};
+    const h2=(y,t)=>{docp.setTextColor(...red);docp.setFont("helvetica","bold");docp.setFontSize(12);docp.text(pdfTxt(t),14,y);return y+3};
+    let y=40;
+    y=tbl(h2(y,"Résumé"),["Indicateur","Montant"],[["Paies reçues",E(M.recu)],["Paies attendues",E(M.att)],["Charges fixes",E(M.fix)],["Dépenses variables",E(M.var_)],["Reste à vivre",E(reste)],["Épargne du mois",E(ep)],["Coussin de sécurité",E(R.epargne)],["Score de santé",score+" / 100"]],{columnStyles:{1:{halign:"right",fontStyle:"bold"}}});
+    const c={};M.d.forEach(x=>c[x.cat]=(c[x.cat]||0)+(+x.montant||0));const ce=Object.entries(c).sort((a,b)=>b[1]-a[1]);
+    if(ce.length)y=tbl(h2(y,"Dépenses par catégorie"),["Catégorie","Montant","Part"],ce.map(([n,v])=>[pdfTxt(n),E(v),Math.round(v/M.var_*100)+" %"]),{columnStyles:{1:{halign:"right"},2:{halign:"right"}}});
+    if(M.p.length)y=tbl(h2(y,"Paies"),["Date","Mission","Heures","Net","Statut"],[...M.p].sort((a,b)=>a.date.localeCompare(b.date)).map(p=>{const m=S.missions.find(x=>x.id===p.mission);return[new Date(p.date+"T12:00").toLocaleDateString("fr-BE"),pdfTxt(m?(m.client||m.agence):(p.note||"")),p.heures?fmtN(p.heures):"",E(p.montant),p.recu?"reçue":"attendue"]}),{columnStyles:{3:{halign:"right"}}});
+    if(S.fixes.length)y=tbl(h2(y,"Charges fixes"),["Charge","Jour","Montant"],S.fixes.map(f=>[pdfTxt(f.nom),f.jour||"",E(f.montant)]),{columnStyles:{2:{halign:"right"}}});
+    if(M.all.length)y=tbl(h2(y,"Dépenses du mois"),["Date","Description","Catégorie","Montant"],[...M.all].sort((a,b)=>a.date.localeCompare(b.date)).map(d=>[new Date(d.date+"T12:00").toLocaleDateString("fr-BE"),pdfTxt(d.note||"")+(d.paye===false?" (à payer)":"")+(lie(d)?" (fixe)":""),pdfTxt(d.cat),E(d.montant)]),{columnStyles:{3:{halign:"right"}}});
+    const n=docp.getNumberOfPages();for(let i=1;i<=n;i++){docp.setPage(i);docp.setFontSize(8);docp.setTextColor(150);docp.text(pdfTxt(`Généré le ${new Date().toLocaleDateString("fr-BE")} avec Budget Intérim`),14,290);docp.text(`${i} / ${n}`,W-14,290,{align:"right"})}
+    docp.save(`bilan-${k}.pdf`);LS.set("lastBackup",Date.now());toast("PDF téléchargé ✓");
+  }catch(e){console.error(e);toast(navigator.onLine?"Création du PDF impossible":"Il faut une connexion pour créer le PDF")}
+  btn.disabled=false;btn.textContent="📄 Bilan PDF du mois"}
+$("bPdf").onclick=bilanPDF;
+
+/* ---------- partager vers l'appli (photo / PDF depuis la galerie, un mail…) ---------- */
+let sharedFile=null;
+async function lireFichierPartage(){try{const c=await caches.open("share");const r=await c.match("shared");if(!r)return null;
+  const blob=await r.blob();const name=decodeURIComponent(r.headers.get("x-name")||"document");await c.delete("shared");return new File([blob],name,{type:blob.type||r.headers.get("content-type")||"image/jpeg"})}catch(e){return null}}
+async function gererPartage(){const f=await lireFichierPartage();if(!f){toast("Aucun fichier reçu");return}sharedFile=f;
+  openRaw(`<h3>Document reçu <button class="del" data-close>×</button></h3><p class="sub" style="margin-bottom:10px">${esc(f.name)} · ${Math.round(f.size/1024)} Ko. C'est quoi ?</p>
+   <div style="display:grid;gap:10px"><button class="btn" data-share="auto">🤖 Laisse l'IA deviner</button><button class="btn sec" data-share="paie">💶 Fiche de paie</button><button class="btn sec" data-share="facture">🧾 Facture / ticket</button><button class="btn sec" data-share="contrat">📑 Contrat</button><button class="btn sec" data-share="releve">🏦 Relevé bancaire</button></div>`)}
+async function routerPartage(type){const f=sharedFile;if(!f)return;
+  if(type==="auto"){if(!model){toast("IA indisponible");return}openRaw(`<h3>Analyse… <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Je regarde de quel document il s'agit…</div>`);
+    try{const img=await toJpegB64(f);const res=await model.generateContent([`Quel est ce document ? Réponds UNIQUEMENT avec un JSON {"type":"paie"|"facture"|"contrat"|"releve"|"autre"} : "paie" = fiche de paie / décompte de salaire, "facture" = facture ou ticket de caisse, "contrat" = contrat de travail intérimaire, "releve" = relevé ou capture d'opérations bancaires.`,{inlineData:img}]);
+      type=(parseJSON(res.response.text())||{}).type}catch(e){openRaw(`<h3>Analyse impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`);return}
+    if(!["paie","facture","contrat","releve"].includes(type)){gererPartageRetry();return}}
+  ({paie:scanFile,facture:scanFacture,contrat:scanContrat,releve:scanReleve})[type](f)}
+function gererPartageRetry(){openRaw(`<h3>Je n'ai pas reconnu ce document <button class="del" data-close>×</button></h3><div style="display:grid;gap:10px"><button class="btn sec" data-share="paie">💶 Fiche de paie</button><button class="btn sec" data-share="facture">🧾 Facture / ticket</button><button class="btn sec" data-share="contrat">📑 Contrat</button><button class="btn sec" data-share="releve">🏦 Relevé bancaire</button></div>`)}
+
+/* ---------- déverrouillage par empreinte (WebAuthn, sur cet appareil) ---------- */
+const b64u={enc:b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""),dec:s=>Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((s.length+3)%4)),c=>c.charCodeAt(0))};
+async function bioDispo(){try{return !!(window.PublicKeyCredential&&await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())}catch(e){return false}}
+async function bioActiver(){try{const cred=await navigator.credentials.create({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)),rp:{name:"Budget Intérim"},user:{id:crypto.getRandomValues(new Uint8Array(16)),name:"budget-interim",displayName:"Budget Intérim"},
+    pubKeyCredParams:[{type:"public-key",alg:-7},{type:"public-key",alg:-257}],authenticatorSelection:{authenticatorAttachment:"platform",userVerification:"required",residentKey:"discouraged"},timeout:60000}});
+  LS.set("bioId",b64u.enc(cred.rawId));toast("Empreinte activée 👆");renderBio()}catch(e){console.warn(e);toast("Empreinte non activée")}}
+async function bioDeverrouiller(){const id=LS.get("bioId",null);if(!id)return false;
+  try{await navigator.credentials.get({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)),allowCredentials:[{type:"public-key",id:b64u.dec(id),transports:["internal"]}],userVerification:"required",timeout:60000}});
+    $("lock").hidden=true;return true}catch(e){console.warn(e);return false}}
+async function renderBio(){const ok=await bioDispo(),pin=!!LS.get("pinHash",null),on=!!LS.get("bioId",null);
+  $("bBio").hidden=!ok||!pin;$("bioState").hidden=!ok||!pin;$("bBio").textContent=on?"👆 Désactiver l'empreinte":"👆 Déverrouiller avec l'empreinte";
+  $("bioState").textContent=on?"Activée : à l'ouverture, ton empreinte suffit (le code PIN reste en secours).":"Utilise ton empreinte au lieu du code PIN.";
+  $("bBioUnlock").hidden=!on}
+$("bBio").onclick=()=>{if(LS.get("bioId",null)){LS.set("bioId",null);renderBio();toast("Empreinte désactivée")}else bioActiver()};
+$("bBioUnlock").onclick=()=>bioDeverrouiller();
+renderBio();
 
 /* ---------- formulaires ---------- */
 const COLL={depense:"depenses",paie:"paies",mission:"missions",fixe:"fixes",objectif:"objectifs",pointage:"pointage",dette:"dettes",cheques:"cr"};
@@ -647,6 +804,12 @@ function openSheet(type,ctx,item,opts={}){
     <datalist id="agList">${[...new Set(S.missions.map(m=>m.agence).filter(Boolean))].map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
     <div class="two"><label>Début<input name="debut" type="date" value="${V("debut",today())}"></label><label>Fin prévue<input name="fin" type="date" value="${V("fin")}"></label></div>
     <div class="two"><label>Taux horaire brut (€)<input name="taux" type="number" step="0.0001" inputmode="decimal" value="${V("taux")}"></label><label>Heures / semaine<input name="hsem" type="number" step="0.5" inputmode="decimal" placeholder="ex. 38" value="${V("hsem")}"></label></div>
+    <div class="card" style="background:var(--card2);margin:0"><div class="k">🚗 Trajet domicile → mission</div>
+      <label style="margin-top:8px">Départ<input id="fDep" name="_dep" value="${esc(S.reglages.domicile||"")}" placeholder="Ton adresse (gardée pour la prochaine fois)"></label>
+      <label style="margin-top:8px">Arrivée<input id="fArr" name="adresse" value="${V("adresse",it.contrat&&it.contrat.lieu?it.contrat.lieu:"")}" placeholder="Adresse de la mission"></label>
+      <div style="display:flex;gap:8px;align-items:flex-end;margin-top:8px"><label style="flex:1">Km (aller)<input id="fKm" name="km" type="number" step="0.1" inputmode="decimal" value="${V("km")}"></label><input type="hidden" id="fMin" name="min" value="${V("min")}"><button type="button" class="btn sm" id="bCalc" style="width:auto;height:46px">📍 Calculer</button></div>
+      <div class="sub" id="trajRes" style="margin-top:6px">${+it.km>0?`≈ ${eur2(coutJour(it))} de carburant par jour (aller-retour)`:""}</div>
+      <p class="osm">Itinéraire © contributeurs OpenStreetMap (Nominatim, OSRM)</p></div>
     ${it.contrat?`<button type="button" class="btn sec" data-cdetail="${it.id}">📑 Voir le détail du contrat</button>`:""}
     ${ed?(it.photo?`<div class="two"><button type="button" class="btn sec" data-photo="${it.photo}">🖼️ Voir le contrat</button><button type="button" class="btn sec" data-attach="missions:${it.id}">🔄 Remplacer</button></div>`:`<button type="button" class="btn sec" data-attach="missions:${it.id}">📎 Joindre le contrat (photo / PDF)</button>`):""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
@@ -922,7 +1085,7 @@ function showScan(r){
 
 document.addEventListener("submit",e=>{
   e.preventDefault();const f=e.target;
-  if(f.id==="fSet"){const R=S.reglages;R.epargne=+$("sEpargne").value||0;R.pct=+$("sPct").value||0;R.mois=+$("sMois").value||1;R.ratio=+$("sRatio").value||78;R.statut=$("sStatut").value;save();toast("Réglages enregistrés");return}
+  if(f.id==="fSet"){const R=S.reglages;R.epargne=+$("sEpargne").value||0;R.pct=+$("sPct").value||0;R.mois=+$("sMois").value||1;R.ratio=+$("sRatio").value||78;R.statut=$("sStatut").value;R.domicile=$("sDomicile").value.trim();R.conso=+$("sConso").value||6.5;R.carbu=+$("sCarbu").value||1.8;save();toast("Réglages enregistrés");return}
   const d=Object.fromEntries(new FormData(f));d.id=uid();
   const t=f.dataset.f;
   if(t==="scan"&&scanRes){const r=scanRes;let mid=d.mission;
@@ -940,7 +1103,7 @@ document.addEventListener("submit",e=>{
     S.depenses.push(dep);
     if(lastFile){const file=lastFile;lastFile=null;savePhoto(file).then(ph=>{const x=S.depenses.find(x=>x.id===dep.id);if(ph&&x){x.photo=ph;save()}})}
     if(f.fixe&&f.fixe.checked){const per=PER[r.periodicite]||1,fid=uid();S.fixes.push({id:fid,nom:r.fournisseur||d.note||"Facture",montant:Math.round(+d.montant/per*100)/100,jour:""});dep.fixe=fid}
-    else{const fx=S.fixes.find(x=>r.recurrent&&r.fournisseur&&x.nom.toLowerCase().includes(r.fournisseur.toLowerCase().split(" ")[0]));if(fx)dep.fixe=fx.id}
+    else{const fx=S.fixes.find(x=>r.recurrent&&r.fournisseur&&x.nom.toLowerCase().includes(r.fournisseur.toLowerCase().split(" ")[0]));if(fx)dep.fixe=fx.id;else autoLink(dep)}
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
     factRes=null;closeSheet();save();toast(dep.paye?"Dépense ajoutée ✓":"Ajoutée · à payer avant le "+fmtD(dep.echeance||d.date));return}
   if(t==="contrat"&&contratRes){saveContrat(f,d);return}
@@ -949,7 +1112,7 @@ document.addEventListener("submit",e=>{
       savePhoto(file).then(ph=>{const x=S.depenses.find(x=>x.id===id);if(ph&&x){x.photo=ph;save()}})});
     multiRes=[];closeSheet();save();toast(n+" dépense(s) ajoutée(s) ✓");return}
   if(t==="releve"&&releveRes.length){let n=0;releveRes.forEach((o,i)=>{if(!f["o"+i]||!f["o"+i].checked)return;
-      if(o.montant<0)S.depenses.push({id:uid(),montant:Math.abs(o.montant),cat:o.cat,date:o.date,note:o.libelle,paye:true});
+      if(o.montant<0){const dd={id:uid(),montant:Math.abs(o.montant),cat:o.cat,date:o.date,note:o.libelle,paye:true};autoLink(dd);S.depenses.push(dd)}
       else S.paies.push({id:uid(),mission:(S.missions.find(mi=>mi.agence&&o.libelle.toLowerCase().includes(mi.agence.toLowerCase().split(/[ .]/)[0]))||{}).id||"",date:o.date,montant:o.montant,recu:true,heures:"",note:o.libelle});n++});
     releveRes=[];closeSheet();save();toast(n+" opération(s) importée(s) ✓");return}
   if(t==="budgets"){const B={};cats().forEach(c=>{const v=+d["b_"+c];if(v>0)B[c]=v});S.budgets=B;closeSheet();save();toast("Budgets enregistrés");return}
@@ -961,13 +1124,14 @@ document.addEventListener("submit",e=>{
     closeSheet();save();toast(m>0?`+${eur2(m)} mis de côté 💪`:`${eur2(m)} retiré`);return}
   // ajout / modification générique
   const fix={depense:x=>{x.montant=+x.montant;x.paye=!!f.paye.checked;if(x.paye)x.echeance=""},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.heures=x.heures?+x.heures:""},
-    mission:x=>{x.taux=x.taux?+x.taux:0;x.hsem=x.hsem?+x.hsem:""},fixe:x=>{x.montant=+x.montant},objectif:x=>{x.cible=+x.cible;x.actuel=+x.actuel||0},
+    mission:x=>{x.taux=x.taux?+x.taux:0;x.hsem=x.hsem?+x.hsem:"";x.km=x.km?+x.km:"";x.min=x.min?+x.min:"";const dep=(x._dep||"").trim();if(dep&&dep!==S.reglages.domicile)S.reglages.domicile=dep;delete x._dep},fixe:x=>{x.montant=+x.montant},objectif:x=>{x.cible=+x.cible;x.actuel=+x.actuel||0},
     pointage:x=>{x.heures=+x.heures;delete x.semaine},cheques:x=>{x.nb=+x.nb;x.valeur=+x.valeur;x.used=+x.used||0},dette:x=>{x.montant=+x.montant;x.regle=!!(f.regle&&f.regle.checked)}};
   if(!fix[t])return;
   if(t==="pointage"&&!f.dataset.id&&f.semaine&&f.semaine.checked){const d0=new Date(d.date+"T12:00");const mon=new Date(d0);mon.setDate(d0.getDate()-((d0.getDay()+6)%7));
     for(let i=0;i<5;i++){const dd=new Date(mon);dd.setDate(mon.getDate()+i);const ds=iso(dd);if(!S.pointage.some(x=>x.date===ds&&x.mission===d.mission))S.pointage.push({id:uid(),mission:d.mission||"",date:ds,heures:+d.heures,type:d.type})}
     closeSheet();save();toast("Semaine pointée ✓");return}
   fix[t](d);
+  if(t==="depense"&&!f.dataset.id)autoLink(d);
   const coll=S[COLL[t]], eid=f.dataset.id;
   if(eid){const o=coll.find(x=>x.id===eid);if(o){delete d.id;Object.assign(o,d)}}
   else coll.push(d);
@@ -976,6 +1140,7 @@ document.addEventListener("submit",e=>{
   closeSheet();save();toast(eid?"Modifié ✓":"Ajouté ✓");
 });
 
+document.addEventListener("change",e=>{const k=e.target.dataset&&e.target.dataset.admin;if(!k)return;if(e.target.checked)S.adminDone[k]=1;else delete S.adminDone[k];save()});
 document.addEventListener("click",e=>{
   const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day]");
   if(e.target===$("sheetBg")){closeSheet();return}
@@ -1002,6 +1167,11 @@ document.addEventListener("click",e=>{
     {const o=(S[k]||[]).find(x=>x.id===id);if(o&&o.photo)delPhoto(o.photo)}S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});closeSheet();save();toast("Supprimé");return}
   if(b.dataset.photo){openPhoto(b.dataset.photo);return}
   if(b.dataset.attach){const tg=b.dataset.attach;pickSource("Joindre un document",f=>attachPhoto(tg,f));return}
+  if(b.id==="bCalc"){calcTrajet();return}
+  if(b.dataset.subadd){addSub(b.dataset.subadd);return}
+  if(b.dataset.subign){S.subsIgnore.push(b.dataset.subign);save();return}
+  if(b.dataset.share){routerPartage(b.dataset.share);return}
+  if(b.dataset.edit2){const[ty,id]=b.dataset.edit2.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.cdetail){const m=S.missions.find(x=>x.id===b.dataset.cdetail);if(m&&m.contrat)openRaw(`<h3>Contrat <button class="del" data-close>×</button></h3>${contratHTML(m.contrat)}`);return}
   if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
   if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail)openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${detailHTML(p.detail)}`);return}

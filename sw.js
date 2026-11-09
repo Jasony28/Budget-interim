@@ -1,18 +1,33 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données, elles, sont gérées hors ligne par Firestore.
-const CACHE = "budget-interim-v12";
-const FILES = ["./", "./index.html", "./app.js?v=12", "./firebase-config.js?v=12", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
+const CACHE = "budget-interim-v13";
+const FILES = ["./", "./index.html", "./app.js?v=13", "./firebase-config.js?v=13", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== "rappels").map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== "rappels" && k !== "share").map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
+  // Fichier partagé depuis une autre appli (galerie, mail…) → gardé puis l'appli s'ouvre dessus
+  if (e.request.method === "POST" && url.origin === location.origin && url.pathname.endsWith("/share")) {
+    e.respondWith((async () => {
+      try {
+        const fd = await e.request.formData();
+        const f = fd.get("file");
+        if (f && f.size) {
+          const c = await caches.open("share");
+          await c.put("shared", new Response(f, { headers: { "content-type": f.type || "application/octet-stream", "x-name": encodeURIComponent(f.name || "document") } }));
+        }
+      } catch (err) {}
+      return Response.redirect("./?share=1", 303);
+    })());
+    return;
+  }
   if (e.request.method !== "GET" || url.origin !== location.origin || url.pathname.endsWith("version.json")) return; // Firebase & CDN : réseau direct
   // Réseau d'abord (pour recevoir les mises à jour), cache si hors ligne
   e.respondWith(

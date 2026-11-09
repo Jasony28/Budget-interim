@@ -9,6 +9,12 @@
   "background_color": "#0a0a0b",
   "theme_color": "#0a0a0b",
   "lang": "fr",
+  "share_target": {
+    "action": "./share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": { "title": "title", "text": "text", "files": [{ "name": "file", "accept": ["image/*", "application/pdf"] }] }
+  },
   "shortcuts": [
     { "name": "Ajouter une dépense", "short_name": "Dépense", "url": "./?a=depense", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
     { "name": "Scanner une facture", "short_name": "Facture", "url": "./?a=facture", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
