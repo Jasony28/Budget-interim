@@ -192,7 +192,7 @@ header h1{font-size:19px}
 .ib svg{width:18px;height:18px}
 .sync{display:inline-flex;align-items:center;justify-content:center;width:20px;height:38px;font-size:0}
 .sync::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--pos);box-shadow:0 0 8px var(--pos)}
-.sync.off::before{background:var(--warn);box-shadow:none}
+.sync.off::before{background:var(--warn);box-shadow:none}.sync.bad::before{background:var(--bad);box-shadow:0 0 8px var(--bad);animation:pulse 1.2s infinite}@keyframes pulse{50%{opacity:.35}}
 main{padding:0 16px 70px}
 .month{background:transparent;padding:0;margin:2px 0 14px;gap:10px}
 .month b{font-size:17px;font-weight:800;flex:1;text-align:center}
@@ -612,6 +612,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
         <button class="btn sec" id="bCopy">Copier</button>
         <button class="btn sec" id="bRestore">Restaurer</button>
       </div>
+      <button class="btn" data-exporter="1" style="margin-top:10px">📤 Envoyer ma sauvegarde (Drive, mail…)</button>
       <button class="btn sec" id="bDownload" style="margin-top:10px">Télécharger un fichier .json</button>
     </div>
     <h2>Compte</h2>
@@ -619,7 +620,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 24</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 25</p>
     </div>
   </section>
 </main>
@@ -641,6 +642,6 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=24"></script>
+<script type="module" src="app.js?v=25"></script>
 </body>
 </html>
