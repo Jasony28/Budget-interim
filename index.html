@@ -148,7 +148,7 @@ body.discret .v,body.discret .amt,body.discret .cat b,body.discret .mt td:not(:f
 .defi button{aspect-ratio:1;border:0;border-radius:8px;background:var(--card2);color:var(--mut);font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;padding:0}
 .defi button.on{background:var(--acc);color:#fff}
 .chk-row{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
-.chk-row input[type=checkbox]{width:20px;height:20px;flex:none}
+.chk-row input[type=checkbox],.chk-row input[type=radio]{width:20px;height:20px;flex:none;accent-color:var(--acc)}
 .chk-row .l{flex:1;min-width:0}.chk-row .l b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chk-row .l small{color:var(--mut);font-size:12px}
 .warnbox{background:#2a1a05;border:1px solid var(--warn);color:#fde68a;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:10px}
 .okbox{background:#052e16;border:1px solid var(--pos);color:#bbf7d0;border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:10px}
@@ -292,6 +292,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
     <div class="two"><button class="btn scanBtn" data-mode="contrat" hidden>📑 Scanner un contrat</button><button class="btn sec" data-open="mission">+ Nouvelle mission</button></div>
     <h2>Paies du mois</h2>
     <div class="two" style="margin-bottom:10px"><button class="btn scanBtn" hidden>📷 Scanner une fiche de paie</button><button class="btn sec" id="bHisto" hidden>📚 Anciennes fiches</button></div>
+    <div id="dupBox"></div>
     <div class="card" id="paies"></div>
   </section>
 
@@ -460,7 +461,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 15</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 16</p>
     </div>
   </section>
 </main>
@@ -482,6 +483,6 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=16"></script>
 </body>
 </html>

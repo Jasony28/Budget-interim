@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=15";
+import * as CFG from "./firebase-config.js?v=16";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=15;
+const APP_VERSION=16;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -255,7 +255,7 @@ function render(){
   const dm=[...dl].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,q?100:500);
   $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${d.photo?"🖼️ ":d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe&&S.fixes.some(f=>f.id===d.fixe)?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
 
-  renderStats();renderOutils();renderExtras(M,k);renderPrevision();renderSettings();renderTrajets();renderDemarches();renderScore(M,k);renderSubs();
+  renderStats();renderOutils();renderExtras(M,k);renderPrevision();renderSettings();renderTrajets();renderDemarches();renderScore(M,k);renderSubs();renderDoublons();
   // réglages
   if(document.activeElement?.closest?.("#fSet")==null){$("sEpargne").value=R.epargne;$("sPct").value=R.pct;$("sMois").value=R.mois;$("sRatio").value=R.ratio;$("sStatut").value=R.statut||"ouvrier";$("sDomicile").value=R.domicile||"";$("sConso").value=R.conso;$("sCarbu").value=R.carbu}
 }
@@ -783,8 +783,10 @@ async function scanHisto(files){
         r.lignes=Array.isArray(r.lignes)?r.lignes.slice(0,25).map(l=>({libelle:String(l.libelle||"").slice(0,80),montant:Math.abs(+l.montant||0),type:["gain","retenue","info"].includes(l.type)?l.type:"info"})):[];
         r.jours=Array.isArray(r.jours)?r.jours.filter(j=>isDate(j.date)&&+j.heures>0).slice(0,31):[];delete r.resume;
         const date=r.date_paiement||r.periode_fin||r.periode_debut;
-        const dup=S.paies.some(p=>p.date===date&&Math.abs(+p.montant-(+r.net||0))<0.01)||histoRes.some(x=>x.date===date&&Math.abs((+x.r.net||0)-(+r.net||0))<0.01);
-        histoRes.push({r,file:files[i],date:date||today(),dup,sansDate:!date})}
+        const ex=S.paies.find(p=>date&&memePaie(p,date,r.net));
+        const dup=(ex&&ex.detail)||histoRes.some(x=>procheJ(x.date,date||today())&&Math.abs((+x.r.net||0)-(+r.net||0))<0.01);
+        const remplace=ex&&!ex.detail?ex.id:null; // virement bancaire déjà importé → la fiche le remplace
+        histoRes.push({r,file:files[i],date:date||today(),dup,remplace,sansDate:!date})}
     }catch(e){console.error(e);if(i===0){openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`);return}}
     if($("histoProg"))$("histoProg").innerHTML=`<span class="spin"></span>${i+1} / ${files.length}`}
   if(scanCtl===ctl)scanCtl=null;
@@ -793,7 +795,7 @@ async function scanHisto(files){
   const tot=sum(histoRes.filter(x=>!x.dup),x=>x.r.net),h=sum(histoRes.filter(x=>!x.dup),x=>x.r.heures);
   openRaw(`<h3>${histoRes.length} ancienne(s) fiche(s) <button class="del" data-close>×</button></h3>
     <div class="okbox">📚 Elles seront ajoutées à ton <b>historique</b> : elles comptent pour ta prime de fin d'année, ton pécule et tes stats, mais <b>pas</b> comme argent disponible.</div>
-    <form data-f="histo">${histoRes.map((x,i)=>`<div class="chk-row"><input type="checkbox" name="h${i}" ${x.dup?"":"checked"}><div class="l"><b>${esc(x.r.agence||"?")}${x.r.client?" · "+esc(x.r.client):""}</b><small>${x.sansDate?"⚠ date illisible · ":""}${new Date(x.date+"T12:00").toLocaleDateString("fr-BE")}${x.r.heures?" · "+fmtN(x.r.heures)+" h":""}${x.r.brut?" · "+eur(x.r.brut)+" brut":""}${x.dup?" · déjà présente":""}</small></div><b>${x.r.net?eur2(x.r.net):"—"}</b></div>`).join("")}
+    <form data-f="histo">${histoRes.map((x,i)=>`<div class="chk-row"><input type="checkbox" name="h${i}" ${x.dup?"":"checked"}><div class="l"><b>${esc(x.r.agence||"?")}${x.r.client?" · "+esc(x.r.client):""}</b><small>${x.sansDate?"⚠ date illisible · ":""}${new Date(x.date+"T12:00").toLocaleDateString("fr-BE")}${x.r.heures?" · "+fmtN(x.r.heures)+" h":""}${x.r.brut?" · "+eur(x.r.brut)+" brut":""}${x.dup?" · déjà présente":x.remplace?" · remplace le virement bancaire":""}</small></div><b>${x.r.net?eur2(x.r.net):"—"}</b></div>`).join("")}
     <p class="sub" style="margin:8px 0">Total : ${eur2(tot)} net · ${fmtN(h)} h. Les missions sont créées automatiquement par agence et client.</p>
     <label class="chk"><input type="checkbox" name="photos" checked> Garder les photos des fiches</label>
     <button class="btn">Ajouter à l'historique</button></form>`);
@@ -803,6 +805,7 @@ function saveHisto(f){let n=0;const lo=s=>(s||"").toLowerCase(),first=s=>lo(s).s
     let m=S.missions.find(m=>m.agence&&r.agence&&(lo(r.agence).includes(lo(m.agence))||lo(m.agence).includes(first(r.agence)))&&(!r.client||!m.client||lo(r.client).includes(first(m.client))||lo(m.client).includes(first(r.client))));
     if(!m&&r.agence){m={id:uid(),agence:r.agence,client:r.client||"",debut:r.periode_debut||x.date,fin:r.periode_fin||x.date,taux:r.taux_horaire_brut||0};S.missions.push(m)}
     else if(m){if(r.periode_debut&&(!m.debut||r.periode_debut<m.debut))m.debut=r.periode_debut;if(!m.taux&&r.taux_horaire_brut)m.taux=r.taux_horaire_brut}
+    if(x.remplace)S.paies=S.paies.filter(p=>p.id!==x.remplace);
     const id=uid();S.paies.push({id,mission:m?m.id:"",date:x.date,montant:+r.net||0,recu:true,archive:true,heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});n++;
     if(f.photos&&f.photos.checked)savePhoto(x.file).then(ph=>{const p=S.paies.find(p=>p.id===id);if(ph&&p){p.photo=ph;save()}})});
   histoRes=[];closeSheet();save();toast(`${n} fiche(s) ajoutée(s) à l'historique 📚`)}
@@ -864,6 +867,33 @@ function afficherReleve(titre){
     <form data-f="releve">${releveRes.map((o,i)=>`<div class="chk-row"><input type="checkbox" name="o${i}" ${!o.dup&&(o.montant<0||o.salaire)?"checked":""}><div class="l"><b>${esc(o.libelle)}</b><small>${fmtD(o.date)} ${o.date.slice(0,4)} · ${o.montant>0?(o.salaire?"💶 paie":"entrée"):esc(o.cat)}${o.dup?" · déjà présent":""}</small></div><b class="${o.montant<0?"out":"pos"}">${o.montant>0?"+":""}${eur2(o.montant)}</b></div>`).join("")}
     <label class="chk" style="margin-top:8px"><input type="checkbox" name="anciennes" checked> Les paies d'avant ce mois-ci vont dans l'historique 📚 (hors budget)</label>
     <button class="btn" style="margin-top:10px">Importer la sélection</button></form>`)}
+
+/* ---------- doublons de paies (fiche scannée 2 fois, ou fiche + virement bancaire) ---------- */
+const procheJ=(a,b,n=7)=>Math.abs(new Date(a+"T12:00")-new Date(b+"T12:00"))<=n*864e5;
+function memePaie(p,date,montant){return Math.abs((+p.montant||0)-(+montant||0))<0.01&&procheJ(p.date,date)}
+function qualite(p){ // plus c'est haut, plus la paie est fiable à garder
+  let q=0;if(p.detail)q+=10;if(p.photo)q+=2;if(+p.heures>0)q+=1;
+  const m=S.missions.find(x=>x.id===p.mission),d=p.detail;
+  if(d&&+d.brut>0&&+p.heures>0){const t=+d.taux_horaire_brut||(m&&+m.taux)||0;if(t){const h=d.brut/t;q+=Math.max(0,5-Math.abs(h-p.heures))}} // heures cohérentes avec le brut
+  return q}
+function trouverDoublons(){const L=[...S.paies].sort((a,b)=>a.date.localeCompare(b.date)),vus=new Set(),G=[];
+  for(let i=0;i<L.length;i++){if(vus.has(L[i].id))continue;const g=[L[i]];
+    for(let j=i+1;j<L.length&&procheJ(L[i].date,L[j].date);j++)if(!vus.has(L[j].id)&&memePaie(L[j],L[i].date,L[i].montant))g.push(L[j]);
+    if(g.length>1){g.forEach(x=>vus.add(x.id));g.sort((a,b)=>qualite(b)-qualite(a));G.push(g)}}
+  return G}
+function renderDoublons(){const G=trouverDoublons();
+  $("dupBox").innerHTML=G.length?`<div class="card alert bad" style="cursor:pointer" data-dups="1"><div style="flex:1"><div class="t">⚠️ ${G.length} paie(s) en double</div><p>La même paie est comptée plusieurs fois (fiche scannée 2 fois, ou fiche + virement de la banque). Touche ici pour nettoyer.</p></div></div>`:""}
+function ouvrirDoublons(){const G=trouverDoublons();if(!G.length){toast("Aucun doublon");return}
+  const lab=p=>{const m=S.missions.find(x=>x.id===p.mission);return `<b>${eur2(p.montant)} · ${new Date(p.date+"T12:00").toLocaleDateString("fr-BE")}</b><small>${p.detail?"📄 fiche scannée":"🏦 virement / saisie"}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.detail&&p.detail.brut?" · "+eur2(p.detail.brut)+" brut":""}${p.note?" · "+esc(p.note):""}</small>`};
+  openRaw(`<h3>Paies en double <button class="del" data-close>×</button></h3>
+    <p class="sub" style="margin-bottom:8px">Pour chaque groupe, choisis la paie à <b>garder</b> (déjà présélectionnée : la plus complète, avec des heures cohérentes avec le brut). Les autres seront supprimées.</p>
+    <form data-f="dups">${G.map((g,gi)=>`<div class="card" style="background:var(--card2);padding:10px 12px">${g.map((p,pi)=>`<label class="chk-row" style="border-bottom:${pi<g.length-1?"1px solid var(--line)":"0"}"><input type="radio" name="g${gi}" value="${p.id}" ${pi===0?"checked":""}><div class="l">${lab(p)}</div>${p.photo?`<button type="button" class="btn sec sm" data-photo="${p.photo}" style="width:auto">🖼️</button>`:""}</label>`).join("")}</div>`).join("")}
+    <button class="btn">Supprimer les doublons</button></form>`)}
+function nettoyerDoublons(f){const G=trouverDoublons();let n=0;
+  G.forEach((g,gi)=>{const keep=(f["g"+gi]&&f["g"+gi].value)||g[0].id,k=g.find(p=>p.id===keep);
+    g.forEach(p=>{if(p.id===keep)return;if(!k.photo&&p.photo){k.photo=p.photo}else if(p.photo)delPhoto(p.photo);
+      if(p.recu)k.recu=true;S.paies=S.paies.filter(x=>x.id!==p.id);n++})});
+  closeSheet();save();toast(`${n} doublon(s) supprimé(s) ✓`)}
 
 /* ---------- formulaires ---------- */
 const COLL={depense:"depenses",paie:"paies",mission:"missions",fixe:"fixes",objectif:"objectifs",pointage:"pointage",dette:"dettes",cheques:"cr"};
@@ -1182,6 +1212,8 @@ function showScan(r){
   if(r.brut&&r.net&&(r.net/r.brut<0.6||r.net/r.brut>1.05))W.push(`Le net représente ${Math.round(r.net/r.brut*100)} % du brut : c'est inhabituel, vérifie les retenues.`);
   if(r.jours.length&&r.heures){const hj=sum(r.jours,j=>j.heures);if(Math.abs(hj-r.heures)>0.25)W.push(`Le détail des jours fait ${fmtN(hj)} h, mais ${fmtN(r.heures)} h sont payées.`)}
   const newDays=r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date));
+  const exP=r.net?S.paies.find(p=>memePaie(p,date,r.net)):null;
+  if(exP&&exP.detail)W.unshift(`🔁 Cette fiche semble <b>déjà enregistrée</b> (${eur2(exP.montant)} le ${fmtD(exP.date)}). L'enregistrer créerait un doublon.`);
   const ctrl=W.length?`<div class="warnbox"><b>⚠️ À vérifier</b><br>${W.join("<br>")}</div>`:(r.heures||r.taux_horaire_brut)?`<div class="okbox">✅ Fiche cohérente : heures, taux et montants concordent.</div>`:"";
   openRaw(`<h3>Ta fiche de paie <button class="del" data-close>×</button></h3>${ctrl}${detailHTML(r)}
    <form data-f="scan" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
@@ -1206,6 +1238,7 @@ document.addEventListener("submit",e=>{
     if(f.ratio&&f.ratio.checked&&r.brut&&r.net)S.reglages.ratio=Math.round(r.net/r.brut*100);
     if(f.pointer&&f.pointer.checked)r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date)).forEach(j=>S.pointage.push({id:uid(),mission:mid||"",date:j.date,heures:j.heures,type:"normal"}));
     if(f.crAdd&&f.crAdd.checked)S.cr.push({id:uid(),date:d.date,nb:r.cheques_repas_nombre,valeur:r.cheques_repas_valeur||((S.missions.find(x=>x.id===mid)||{}).contrat||{}).cheque_repas_valeur||8,used:0});
+    {const exB=S.paies.find(p=>!p.detail&&memePaie(p,d.date,d.montant));if(exB){S.paies=S.paies.filter(p=>p.id!==exB.id);if(exB.archive)f.archive&&(f.archive.checked=true)}} // remplace le virement bancaire importé
     S.paies.push({id:d.id,mission:mid||"",date:d.date,montant:+d.montant,recu:!!f.recu.checked,archive:!!(f.archive&&f.archive.checked),heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});
     if(lastFile){const pid=d.id,file=lastFile;lastFile=null;savePhoto(file).then(ph=>{const p=S.paies.find(x=>x.id===pid);if(ph&&p){p.photo=ph;save()}})}
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
@@ -1220,6 +1253,7 @@ document.addEventListener("submit",e=>{
     factRes=null;closeSheet();save();toast(dep.paye?"Dépense ajoutée ✓":"Ajoutée · à payer avant le "+fmtD(dep.echeance||d.date));return}
   if(t==="contrat"&&contratRes){saveContrat(f,d);return}
   if(t==="histo"&&histoRes.length){saveHisto(f);return}
+  if(t==="dups"){nettoyerDoublons(f);return}
   if(t==="multi"&&multiRes.length){let n=0;multiRes.forEach(({r,file},i)=>{if(!f["m"+i]||!f["m"+i].checked)return;const id=uid();
       S.depenses.push({id,montant:r.montant_total,cat:r.categorie,date:r.date,note:r.fournisseur||"",paye:!(r.echeance&&!r.deja_paye),echeance:r.echeance&&!r.deja_paye?r.echeance:"",detail:r});n++;
       savePhoto(file).then(ph=>{const x=S.depenses.find(x=>x.id===id);if(ph&&x){x.photo=ph;save()}})});
@@ -1255,7 +1289,7 @@ document.addEventListener("submit",e=>{
 
 document.addEventListener("change",e=>{const k=e.target.dataset&&e.target.dataset.admin;if(!k)return;if(e.target.checked)S.adminDone[k]=1;else delete S.adminDone[k];save()});
 document.addEventListener("click",e=>{
-  const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day]");
+  const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day],[data-dups]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
   if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";const T={facture:"Scanner une facture / un ticket",contrat:"Scanner un contrat",paie:"Scanner une fiche de paie"},F={facture:scanFacture,contrat:scanContrat,paie:scanFile};pickSource(T[m]||T.paie,f=>(F[m]||scanFile)(f));return}
@@ -1281,6 +1315,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.photo){openPhoto(b.dataset.photo);return}
   if(b.dataset.attach){const tg=b.dataset.attach;pickSource("Joindre un document",f=>attachPhoto(tg,f));return}
   if(b.id==="bCalc"){calcTrajet();return}
+  if(b.dataset.dups){ouvrirDoublons();return}
   if(b.dataset.subadd){addSub(b.dataset.subadd);return}
   if(b.dataset.subign){S.subsIgnore.push(b.dataset.subign);save();return}
   if(b.dataset.share){routerPartage(b.dataset.share);return}
