@@ -324,6 +324,10 @@ details.acc[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px
 .ctrl-i>span{flex:none;width:20px;text-align:center}.ctrl-i b{display:block;font-size:13.5px}.ctrl-i small{color:var(--mut);font-size:12.5px}
 .ctrl-i.bad b{color:#ff8a95}.ctrl-i.warn b{color:var(--warn)}.ctrl-i.ok{opacity:.85}
 .pill.ok{background:#0b2a17;color:var(--pos)}
+
+.two,.grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+input,select{min-width:0;max-width:100%}
+body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt{filter:blur(8px)}
 </style>
 </head>
 <body class="signed-out">
@@ -612,7 +616,7 @@ details.acc[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 21</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 22</p>
     </div>
   </section>
 </main>
@@ -634,6 +638,6 @@ details.acc[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=21"></script>
+<script type="module" src="app.js?v=22"></script>
 </body>
 </html>
