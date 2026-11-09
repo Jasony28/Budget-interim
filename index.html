@@ -365,7 +365,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 <div id="updBanner" hidden><span>✨ Nouvelle version disponible</span><button class="btn sm updBtn" style="background:#fff;color:var(--acc)">Mettre à jour</button></div>
 <header>
   <h1>Budget <span>Intérim</span></h1>
-  <div class="hdr-r"><div class="sync off" id="sync" title="Chargement…"></div><button class="ib" id="bDiscret" title="Masquer les montants" aria-label="Mode discret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ib updBtn" title="Mettre à jour l'appli" aria-label="Mettre à jour"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button><button class="ib" data-v="set" title="Réglages" aria-label="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div>
+  <div class="hdr-r"><button type="button" class="sync off" id="sync" title="Chargement…" style="background:none;border:0;cursor:pointer"></button><button class="ib" id="bDiscret" title="Masquer les montants" aria-label="Mode discret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ib updBtn" title="Mettre à jour l'appli" aria-label="Mettre à jour"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button><button class="ib" data-v="set" title="Réglages" aria-label="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div>
 </header>
 
 <main>
@@ -605,6 +605,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
     <div class="card">
       <p class="sub" style="margin-bottom:10px">Tes données sont enregistrées dans ton compte Google (Firebase), et l'appli en garde une copie automatique chaque jour pendant 14 jours.</p>
       <button class="btn" id="bVersions" style="margin-bottom:14px">🕘 Revenir à une version précédente</button>
+      <button class="btn sec" data-diag="1" style="margin-bottom:14px">🩺 Diagnostic de la synchro</button>
       <p class="sub" style="margin-bottom:10px">Tu peux aussi garder ta propre copie : <span id="lastBackup"></span></p>
       <textarea id="backup" placeholder="Colle une sauvegarde ici…"></textarea>
       <div class="two" style="margin-top:10px">
@@ -618,7 +619,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 23</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 24</p>
     </div>
   </section>
 </main>
@@ -640,6 +641,6 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=23"></script>
+<script type="module" src="app.js?v=24"></script>
 </body>
 </html>

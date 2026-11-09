@@ -1,13 +1,13 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=23";
+import * as CFG from "./firebase-config.js?v=24";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=23;
+const APP_VERSION=24;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -41,7 +41,7 @@ const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
 const fdb=app?initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})}):null;
-let fsDoc=null, unsub=null, curUid=null, loaded=false;
+let fsDoc=null, unsub=null, curUid=null, loaded=false, fsErr=null, fsTimer=null;
 function setSync(t){$("sync").title=t;$("sync").setAttribute("aria-label",t);$("sync").classList.toggle("off",/hors|erreur|chargement|attente|…/i.test(t))}
 function compacter(){ // Firestore : 1 Mo max par document → on allège les vieux détails si besoin
   let json=JSON.stringify(S);if(json.length<850e3)return json;
@@ -85,11 +85,34 @@ function restaurerVersion(k){const v=k==="local"?window.__vloc:(window.__version
   let d;try{d=normalize(JSON.parse(v.data))}catch(e){toast("Copie illisible");return}
   if(!confirm(`Revenir à la version du ${new Date(v.date+"T12:00").toLocaleDateString("fr-BE")} ?\n(${resumeEtat(d)})\n\nTes données actuelles seront remplacées. Une copie d'aujourd'hui reste disponible.`))return;
   S=d;save();closeSheet();toast("Version restaurée ✓")}
+function fsRaison(e){e=String(e||"");
+  if(e==="lent")return "Firebase ne répond pas. Vérifie ta connexion internet (4G / wifi).";
+  if(/permission/.test(e))return "Firebase refuse l'accès à tes données (règles Firestore ou App Check).";
+  if(/unavailable|network|offline/.test(e))return "Pas de connexion à Firebase pour l'instant.";
+  if(/unauthenticated/.test(e))return "Ta connexion Google a expiré : déconnecte-toi puis reconnecte-toi.";
+  return "Erreur Firebase : "+e}
+function reconnecter(){if(!curUid)return;if(unsub){unsub();unsub=null}subscribe(curUid);toast("Nouvelle tentative…")}
+async function diagnostic(){
+  const u=auth&&auth.currentUser;
+  openRaw(`<h3>🩺 Diagnostic <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Je vérifie tes données sur Firebase…</div>`);
+  let srv,err=null;try{srv=await getDocFromServer(fsDoc)}catch(e){err=e.code||e.message}
+  const d=srv&&srv.exists()?srv.data():null;
+  let nbk=0;try{const j=[...Array(BK_JOURS+1).keys()].map(i=>{const x=new Date();x.setDate(x.getDate()-i);return iso(x)});nbk=(await Promise.all(j.map(x=>getDoc(doc(fdb,"budgets",curUid,"photos",bkId(x))).then(s=>s.exists()).catch(()=>false)))).filter(Boolean).length}catch(e){}
+  const L=(k,v)=>`<div class="ln"><span>${k}</span><b style="text-align:right">${v}</b></div>`;
+  const verdict=err?`<div class="warnbox"><b>Impossible de lire Firebase.</b><br>${esc(fsRaison(err))}</div>`
+    :!d?`<div class="warnbox"><b>Aucune donnée trouvée pour ce compte sur Firebase.</b><br>Vérifie que c'est bien le compte Google que tu utilisais avant. Sinon, essaie « Revenir à une version précédente ».</div>`
+    :aDesDonnees(d)&&!aDesDonnees(S)?`<div class="warnbox"><b>Tes données sont bien sur Firebase</b> (${esc(resumeEtat(d))}) mais pas affichées. Touche « Recharger ».</div>`
+    :`<div class="okbox"><b>Tout va bien.</b> Tes données sont sur Firebase et à jour sur ce téléphone.</div>`;
+  $("sheet").innerHTML=`<h3>🩺 Diagnostic <button class="del" data-close>×</button></h3>${verdict}
+   <div class="card" style="background:var(--card2)">${L("Compte",esc(u?(u.email||u.displayName||"?"):"non connecté"))}${L("Identifiant",esc(curUid?curUid.slice(0,6)+"…":"—"))}${L("Connexion internet",navigator.onLine?"✅ oui":"❌ non")}
+   ${L("Données sur Firebase",err?"❌ illisibles":d?esc(resumeEtat(d)):"aucune")}${L("Données sur ce téléphone",esc(resumeEtat(S)))}${L("Copies de secours",nbk+" jour(s)")}${L("Version de l'appli",APP_VERSION)}</div>
+   <div class="two" style="margin-top:12px"><button type="button" class="btn" data-reco="1">🔄 Recharger</button><button type="button" class="btn sec" id="bVersions">🕘 Versions</button></div>`}
 function subscribe(uid){
   fsDoc=doc(fdb,"budgets",uid);curUid=uid;loaded=false;
   setSync("Chargement…");
+  fsErr=null;clearTimeout(fsTimer);fsTimer=setTimeout(()=>{if(!loaded){fsErr=fsErr||"lent";render()}},10000);
   unsub=onSnapshot(fsDoc,{includeMetadataChanges:true},snap=>{
-    const m=snap.metadata;
+    const m=snap.metadata;if(!m.fromCache)fsErr=null;
     if(!m.hasPendingWrites&&snap.exists())S=normalize(snap.data());
     if(!m.hasPendingWrites&&(snap.exists()||!m.fromCache))loaded=true; // jamais d'écriture avant d'avoir lu les vraies données
     if(loaded&&snap.exists()&&!m.fromCache&&!m.hasPendingWrites&&!window.__bk){window.__bk=1;setTimeout(autoBackup,2500)}
@@ -97,7 +120,7 @@ function subscribe(uid){
     render();
     hideSplash();
     if(!window.__first){window.__first=1;syncRappels();setTimeout(notifierMaintenant,1500);raccourci()}
-  },e=>{console.error(e);hideSplash();setSync("⚠ Accès refusé (règles Firestore ?)")});
+  },e=>{console.error(e);fsErr=e.code||e.message||"erreur";hideSplash();setSync("⚠ Erreur de lecture Firebase");render()});
 }
 function init(){
   if(!configured){hideSplash();$("loginErr").textContent="Firebase n'est pas encore configuré : remplis le fichier firebase-config.js (voir README).";$("bLogin").disabled=true;return}
@@ -217,6 +240,7 @@ function render(){
 
   // alertes
   const A=[];
+  if(fsErr&&!loaded)A.push(["bad","Tes données ne s'affichent pas",esc(fsRaison(fsErr))+" Rien n'est effacé : l'appli n'écrit rien tant qu'elle n'a pas relu Firebase.",`<div class="two" style="margin-top:10px"><button class="btn sm" data-reco="1">🔄 Réessayer</button><button class="btn sec sm" data-diag="1">🩺 Diagnostic</button></div>`]);
   const active=S.missions.filter(m=>(!m.debut||m.debut<=t)&&(!m.fin||m.fin>=t));
   if(!S.missions.length) A.push(["","Ajoute ta première mission","Onglet Paies → nouvelle mission, ou scanne directement une fiche de paie 📷."]);
   else if(!active.length) A.push(["bad","Pas de mission en cours",`Avec tes charges fixes de ${eur(fx)}/mois, ton épargne tient ${fx?(R.epargne/fx).toLocaleString("fr-BE",{maximumFractionDigits:1}):"∞"} mois.`]);
@@ -237,7 +261,7 @@ function render(){
   const deja=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)&&x.montant>0),x=>x.montant);
   const aside=Math.max(0,M.recu*R.pct/100-deja);
   if(aside>=1&&R.pct>0) A.push(["ok",`Mets ${eur(aside)} de côté`,`${R.pct}% de tes paies reçues ce mois, pour tenir pendant les périodes sans mission.`,`<button class="btn sm" data-open="epargne" data-amt="${aside.toFixed(2)}" style="margin-top:10px">C'est fait</button>`]);
-  const AI=t=>/à vérifier/i.test(t)?"🔎":/mission en cours/i.test(t)?"✅":/pas de mission/i.test(t)?"⚠️":/fin de mission/i.test(t)?"⏳":/paie/i.test(t)?"💶":/facture/i.test(t)?"🧾":/budget/i.test(t)?"📊":/de côté/i.test(t)?"🐷":/mission/i.test(t)?"🏭":"📌";
+  const AI=t=>/ne s'affichent/i.test(t)?"☁️":/à vérifier/i.test(t)?"🔎":/mission en cours/i.test(t)?"✅":/pas de mission/i.test(t)?"⚠️":/fin de mission/i.test(t)?"⏳":/paie/i.test(t)?"💶":/facture/i.test(t)?"🧾":/budget/i.test(t)?"📊":/de côté/i.test(t)?"🐷":/mission/i.test(t)?"🏭":"📌";
   A.sort((x,y)=>(y[0]==="bad")-(x[0]==="bad"));
   const aH=x=>`<div class="card alert ${x[0]}"><span class="ai">${AI(x[1])}</span><div style="flex:1;min-width:0"><div class="t">${x[1]}</div><p>${x[2]}</p>${x[3]||""}</div></div>`;
   $("alerts").innerHTML=A.slice(0,alertsAll?99:3).map(aH).join("")+(A.length>3&&!alertsAll?`<button type="button" class="more-alerts" data-moreal="1">Voir ${A.length-3} autre${A.length-3>1?"s":""} info${A.length-3>1?"s":""}</button>`:"");
@@ -1452,6 +1476,8 @@ document.addEventListener("click",e=>{
     $("agCopy").onclick=async()=>{try{await navigator.clipboard.writeText($("agTxt").value);toast("Message copié ✓")}catch(e){$("agTxt").select();document.execCommand("copy");toast("Message copié ✓")}};
     $("agShare").onclick=async()=>{const t=$("agTxt").value;if(navigator.share){try{await navigator.share({title:"Ma fiche de paie",text:t})}catch(e){}}else{location.href="mailto:?subject="+encodeURIComponent("Question sur ma fiche de paie")+"&body="+encodeURIComponent(t)}};return}
   if(b.dataset.ctrlvu){const p=S.paies.find(x=>x.id===b.dataset.ctrlvu);if(p){p.ctrlVu=true;save();closeSheet();toast("Noté, paie marquée comme vérifiée ✓")}return}
+  if(b.dataset.reco){closeSheet();reconnecter();return}
+  if(b.dataset.diag||b.id==="sync"){diagnostic();return}
   if(b.dataset.version){restaurerVersion(b.dataset.version);return}
   if(b.id==="bVersions"){ouvrirVersions();return}
   if(b.dataset.moreal){alertsAll=true;render();return}
