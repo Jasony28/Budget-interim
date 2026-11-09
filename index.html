@@ -97,6 +97,28 @@ nav button.on{color:var(--acc);background:var(--card)}
 .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--mut);border-top-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-3px;margin-right:8px}
 @keyframes sp{to{transform:rotate(360deg)}}
 [hidden]{display:none!important}
+/* ---------- écran de démarrage ---------- */
+#splash{position:fixed;inset:0;z-index:70;background:radial-gradient(circle at 50% 38%,#2a070c 0%,#0a0a0b 62%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;transition:opacity .5s ease,visibility .5s;padding-bottom:6vh}
+#splash.out{opacity:0;visibility:hidden}
+.sp-wrap{position:relative;width:150px;height:150px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.sp-logo{position:relative;z-index:2;filter:drop-shadow(0 14px 30px rgba(239,35,60,.45));animation:spPop .7s cubic-bezier(.34,1.56,.64,1) both}
+.sp-euro{animation:spEuro .9s .25s cubic-bezier(.34,1.56,.64,1) both;transform-origin:60px 60px;transform-box:fill-box}
+.sp-shine{animation:spShine 2.2s .7s ease-in-out infinite}
+.sp-ring{position:absolute;inset:18px;border-radius:38px;border:2px solid rgba(239,35,60,.55);animation:spRing 2s .5s ease-out infinite;opacity:0}
+.sp-ring.r2{animation-delay:1.5s}
+.sp-title{font-size:30px;font-weight:800;letter-spacing:-.03em;color:#f4f4f5;animation:spUp .6s .35s ease both}
+.sp-title span{color:var(--acc)}
+.sp-tag{color:var(--mut);font-size:14px;font-weight:600;animation:spUp .6s .5s ease both}
+.sp-bar{width:140px;height:4px;border-radius:99px;background:#24242a;overflow:hidden;margin-top:26px;animation:spUp .6s .6s ease both}
+.sp-bar i{display:block;height:100%;width:40%;border-radius:99px;background:linear-gradient(90deg,#b8121f,#ef233c);animation:spLoad 1.1s ease-in-out infinite}
+@keyframes spPop{0%{transform:scale(.4) rotate(-12deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+@keyframes spEuro{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes spShine{0%{transform:translateX(0) rotate(20deg)}60%,100%{transform:translateX(200px) rotate(20deg)}}
+@keyframes spRing{0%{transform:scale(.85);opacity:.9}100%{transform:scale(1.45);opacity:0}}
+@keyframes spUp{0%{transform:translateY(14px);opacity:0}100%{transform:none;opacity:1}}
+@keyframes spLoad{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+@media (prefers-reduced-motion:reduce){#splash *{animation:none!important}.sp-ring{display:none}}
+
 #lock{position:fixed;inset:0;background:var(--bg);z-index:60;display:flex;align-items:center;justify-content:center;padding:24px}
 #lock[hidden]{display:none!important}
 .pinpad{display:grid;grid-template-columns:repeat(3,72px);gap:14px;justify-content:center;margin-top:16px}
@@ -149,12 +171,29 @@ summary{cursor:pointer}
 .danger{background:transparent;border:1px solid var(--bad);color:var(--bad)}
 #login{position:fixed;inset:0;background:var(--bg);z-index:30;display:flex;align-items:center;justify-content:center;padding:24px}
 #login .login-box{max-width:340px;width:100%;text-align:center}
-body.signed-out>*:not(#login):not(.toast){display:none!important}
+body.signed-out>*:not(#login):not(.toast):not(#splash){display:none!important}
 body:not(.signed-out) #login{display:none}
 textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:10px;font-family:monospace;font-size:12px}
 </style>
 </head>
 <body class="signed-out">
+<div id="splash" aria-hidden="true">
+  <div class="sp-wrap">
+    <div class="sp-ring"></div><div class="sp-ring r2"></div>
+    <svg class="sp-logo" viewBox="0 0 120 120" width="112" height="112">
+      <defs><linearGradient id="spg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef233c"/><stop offset="1" stop-color="#7a0c16"/></linearGradient>
+        <linearGradient id="sps" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+        <clipPath id="spc"><rect x="6" y="6" width="108" height="108" rx="28"/></clipPath></defs>
+      <rect x="6" y="6" width="108" height="108" rx="28" fill="url(#spg)"/>
+      <g clip-path="url(#spc)"><rect class="sp-shine" x="-60" y="-10" width="40" height="140" fill="url(#sps)" transform="rotate(20 60 60)"/></g>
+      <text x="60" y="80" text-anchor="middle" font-family="Manrope,Arial,sans-serif" font-weight="800" font-size="62" fill="#fff" class="sp-euro">€</text>
+    </svg>
+  </div>
+  <h1 class="sp-title">Budget <span>Intérim</span></h1>
+  <p class="sp-tag">Ton argent, mission après mission</p>
+  <div class="sp-bar"><i></i></div>
+</div>
+
 <div id="login">
   <div class="login-box">
     <img src="icon-192.png" alt="" width="84" height="84" style="border-radius:22px">
@@ -236,7 +275,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
   <section class="view" id="v-rev">
     <h2>Missions</h2>
     <div class="card" id="missions"></div>
-    <button class="btn sec" data-open="mission">+ Nouvelle mission</button>
+    <div class="two"><button class="btn scanBtn" data-mode="contrat" hidden>📑 Scanner un contrat</button><button class="btn sec" data-open="mission">+ Nouvelle mission</button></div>
     <h2>Paies du mois</h2>
     <button class="btn scanBtn" hidden style="margin-bottom:10px">📷 Scanner une fiche de paie</button>
     <div class="card" id="paies"></div>
@@ -383,7 +422,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 11</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 12</p>
     </div>
   </section>
 </main>
@@ -405,6 +444,6 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=11"></script>
+<script type="module" src="app.js?v=12"></script>
 </body>
 </html>

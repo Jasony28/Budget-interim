@@ -3,9 +3,14 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=11";
+import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=12";
 
-const APP_VERSION=11;
+const APP_VERSION=12;
+// écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
+const SPLASH_T0=performance.now();let splashGone=false;
+function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
+  setTimeout(()=>{el.classList.add("out");setTimeout(()=>el.remove(),600)},Math.max(0,1300-(performance.now()-SPLASH_T0)))}
+setTimeout(hideSplash,6000);
 const DEFAULT_CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
 const cats=()=>(S.cats&&S.cats.length?S.cats:DEFAULT_CATS);
 const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],pointage:[],cr:[],dettes:[],defi:[],cats:null,reglages:{epargne:0,pct:10,mois:3,ratio:78,statut:"ouvrier"}};
@@ -60,11 +65,12 @@ function subscribe(uid){
     if(!m.hasPendingWrites&&(snap.exists()||!m.fromCache))loaded=true; // jamais d'écriture avant d'avoir lu les vraies données
     setSync(m.hasPendingWrites?(navigator.onLine?"Sauvegarde…":"Hors ligne · enregistré sur le téléphone"):m.fromCache?"Hors ligne":"✓ Synchronisé");
     render();
+    hideSplash();
     if(!window.__first){window.__first=1;syncRappels();setTimeout(notifierMaintenant,1500);raccourci()}
-  },e=>{console.error(e);setSync("⚠ Accès refusé (règles Firestore ?)")});
+  },e=>{console.error(e);hideSplash();setSync("⚠ Accès refusé (règles Firestore ?)")});
 }
 function init(){
-  if(!configured){$("loginErr").textContent="Firebase n'est pas encore configuré : remplis le fichier firebase-config.js (voir README).";$("bLogin").disabled=true;return}
+  if(!configured){hideSplash();$("loginErr").textContent="Firebase n'est pas encore configuré : remplis le fichier firebase-config.js (voir README).";$("bLogin").disabled=true;return}
   onAuthStateChanged(auth,user=>{
     if(unsub){unsub();unsub=null}
     if(user){
@@ -72,7 +78,7 @@ function init(){
       $("who").textContent="Connecté : "+(user.email||user.displayName||"");
       subscribe(user.uid);
     }else{
-      document.body.classList.add("signed-out");fsDoc=null;loaded=false;curUid=null;S=JSON.parse(JSON.stringify(DEF));
+      hideSplash();document.body.classList.add("signed-out");fsDoc=null;loaded=false;curUid=null;S=JSON.parse(JSON.stringify(DEF));
     }
   });
   getRedirectResult(auth).catch(e=>{$("loginErr").textContent=loginMsg(e)});
@@ -108,6 +114,7 @@ async function forceUpdate(){
   location.replace(location.pathname+"?maj="+Date.now());
 }
 async function checkUpdate(){
+  if(!navigator.onLine)return;
   try{const r=await fetch("version.json?t="+Date.now(),{cache:"no-store"});if(!r.ok)return;const j=await r.json();
     if(+j.version>APP_VERSION){$("updBanner").hidden=false;$("verLabel").textContent=`Version ${APP_VERSION} · la ${j.version} est disponible`}}catch(e){}
 }
@@ -220,7 +227,7 @@ function render(){
   $("missions").innerHTML=ms2.length?ms2.map(m=>{
     const on=(!m.debut||m.debut<=t)&&(!m.fin||m.fin>=t);
     const h=sum(S.paies.filter(p=>p.mission===m.id),p=>p.heures);
-    return row("mission:"+m.id,`<b>${esc(m.client||"Mission")}${on?'<span class="pill g">en cours</span>':(m.debut>t?'<span class="pill y">à venir</span>':'')}</b>
+    return row("mission:"+m.id,`<b>${m.contrat||m.photo?"📑 ":""}${esc(m.client||"Mission")}${on?'<span class="pill g">en cours</span>':(m.debut>t?'<span class="pill y">à venir</span>':'')}</b>
     <small>${esc(m.agence)} · ${fmtD(m.debut)}${m.fin?" → "+fmtD(m.fin):" → ?"}${m.taux?" · "+eurT(m.taux)+"/h":""}</small><br><small>Reçu : ${eur(missionPaid(m))}${h?" · "+fmtN(h)+" h":""}</small>`,
     `<button class="btn sm" data-paie="${m.id}">+ Paie</button><button class="del" data-del="missions:${m.id}">×</button>`)}).join(""):`<div class="empty">Aucune mission</div>`;
 
@@ -386,7 +393,7 @@ function renderPrevision(){
   const mois=[];for(let i=1;i<=3;i++){const d=new Date(n.getFullYear(),n.getMonth()-i+1,1);const x=monthData(mkey(d));if(x.recu+x.att>0)mois.push(x.recu+x.att)}
   let rev=0,src="";
   if(cont.length){const P28=S.pointage.filter(x=>x.date>=iso(new Date(Date.now()-28*864e5))),wk=new Set(P28.map(x=>{const d=new Date(x.date+"T12:00");d.setDate(d.getDate()-((d.getDay()+6)%7));return iso(d)}));
-    const h=wk.size?sum(P28,x=>x.heures)/wk.size:38;const m=cont.find(x=>+x.taux>0);
+    const m=cont.find(x=>+x.taux>0);const h=wk.size?sum(P28,x=>x.heures)/wk.size:(m&&+m.hsem)||38;
     if(m){rev=h*4.33*m.taux*S.reglages.ratio/100;src=`${Math.round(h)} h/sem × ${eurT(m.taux)} brut`}else if(mois.length){rev=sum(mois,x=>x)/mois.length;src="moyenne de tes derniers mois"}}
   const dep=fixesTotal()+avgVar();
   $("prevNet").textContent=cont.length?eur(rev-dep):"⚠ Aucune mission";
@@ -453,7 +460,7 @@ $("bNotif").onclick=async()=>{if(!("Notification" in window))return;const p=awai
 // raccourcis (appui long sur l'icône)
 function raccourci(){const a=new URLSearchParams(location.search).get("a");if(!a)return;history.replaceState(null,"",location.pathname);
   if(a==="depense")openSheet("depense");else if(a==="pointage")openSheet("pointage");
-  else if(a==="facture")pickSource("Scanner une facture / un ticket",f=>scanFacture(f));else if(a==="paie")pickSource("Scanner une fiche de paie",f=>scanFile(f))}
+  else if(a==="facture")pickSource("Scanner une facture / un ticket",f=>scanFacture(f));else if(a==="paie")pickSource("Scanner une fiche de paie",f=>scanFile(f));else if(a==="contrat")pickSource("Scanner un contrat",f=>scanContrat(f))}
 
 /* ---------- assistant IA ---------- */
 function resumeDonnees(){
@@ -462,7 +469,7 @@ function resumeDonnees(){
   L.push("Charges fixes mensuelles : "+(S.fixes.map(f=>`${f.nom} ${eur2(f.montant)}`).join(", ")||"aucune")+` (total ${eur2(fixesTotal())}).`);
   if(Object.keys(S.budgets).length)L.push("Budgets mensuels : "+Object.entries(S.budgets).map(([c,v])=>`${c} ${eur(v)}`).join(", "));
   if(S.objectifs.length)L.push("Objectifs : "+S.objectifs.map(o=>`${o.nom} ${eur(o.actuel||0)}/${eur(o.cible)}${o.echeance?" pour le "+o.echeance:""}`).join(", "));
-  const act=S.missions.filter(m=>!m.fin||m.fin>=today());L.push("Missions en cours/à venir : "+(act.map(m=>`${m.client||""} (${m.agence}) ${m.taux?m.taux+" €/h brut":""} ${m.debut||""}→${m.fin||"?"}`).join("; ")||"aucune"));
+  const act=S.missions.filter(m=>!m.fin||m.fin>=today());L.push("Missions en cours/à venir : "+(act.map(m=>`${m.client||""} (${m.agence}) ${m.taux?m.taux+" €/h brut":""}${m.hsem?" "+m.hsem+" h/sem":""} ${m.debut||""}→${m.fin||"?"}${m.contrat&&m.contrat.horaire?" horaire "+m.contrat.horaire:""}`).join("; ")||"aucune"));
   const ms=[];for(let i=0;i<6;i++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const k=mkey(d),x=monthData(k),c={};x.d.forEach(e=>c[e.cat]=(c[e.cat]||0)+(+e.montant||0));
     ms.push(`${k} : revenus ${eur(x.recu+x.att)}, dépenses variables ${eur(x.var_)} [${Object.entries(c).map(([n,v])=>n+" "+eur(v)).join(", ")}]`)}
   L.push("Par mois :\n"+ms.join("\n"));
@@ -540,6 +547,68 @@ async function scanReleve(f){
 }
 $("bReleve").onclick=()=>pickSource("Relevé bancaire (capture ou PDF)",f=>scanReleve(f));
 
+/* ---------- scan de contrat intérimaire ---------- */
+const PROMPT_CONTRAT=`Tu lis la photo, capture d'écran ou PDF d'un CONTRAT DE TRAVAIL INTÉRIMAIRE (probablement belge) : contrat journalier/hebdomadaire, prolongation ou avenant.
+Réponds UNIQUEMENT avec un objet JSON de cette forme :
+{"agence":"agence d'intérim (employeur)","client":"entreprise utilisatrice","fonction":"poste / fonction ou null","lieu":"lieu de travail (ville) ou null",
+"date_debut":"YYYY-MM-DD ou null","date_fin":"YYYY-MM-DD ou null","heures_semaine":nombre d'heures par semaine ou null,"horaire":"horaire en quelques mots (ex. 7h-15h30, équipes, nuit) ou null",
+"taux_horaire_brut":nombre ou null,"commission_paritaire":"numéro de CP ou null","statut":"ouvrier" | "employé" | null,
+"primes":[{"libelle":"prime de nuit, d'équipe, sursalaire, etc.","valeur":"montant ou % tel qu'écrit"}],
+"cheque_repas_valeur":valeur faciale d'un chèque-repas ou null,"deplacement":"indemnité de transport / mobilité en quelques mots ou null","motif":"motif de l'intérim (remplacement, surcroît…) ou null",
+"resume":"2 phrases simples : de quoi il s'agit et les points importants (dates, salaire, horaire)"}
+Règles : nombres avec un point décimal. N'invente rien : null si absent ou illisible. Maximum 8 primes.
+Si l'image n'est pas un contrat de travail, réponds {"erreur":"explication courte"}.`;
+let contratRes=null;
+async function scanContrat(f){lastFile=f;
+  if(!model||!canImg){toast("Scan indisponible");return}
+  if(f.size>20e6){toast("Fichier trop lourd");return}
+  openRaw(`<h3>Lecture du contrat <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini lit ton contrat… (5 à 30 s)</div>`);
+  const ctl=scanCtl=new AbortController();
+  try{const img=await toJpegB64(f);const res=await model.generateContent([PROMPT_CONTRAT,{inlineData:img}]);
+    if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;
+    const r=parseJSON(res.response.text());
+    if(!r||typeof r!=="object"||r.erreur){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">${esc(r&&r.erreur||"Je n'ai pas reconnu de contrat de travail.")}</div><button class="btn scanBtn" data-mode="contrat" style="margin-top:12px">Réessayer avec une autre photo</button>`);return}
+    ["agence","client","fonction","lieu","horaire","commission_paritaire","statut","deplacement","motif","resume"].forEach(k=>{r[k]=r[k]==null||r[k]===""?null:String(r[k]).slice(0,300)});
+    ["date_debut","date_fin"].forEach(k=>{if(!isDate(r[k]))r[k]=null});
+    ["heures_semaine","taux_horaire_brut","cheque_repas_valeur"].forEach(k=>{r[k]=r[k]!=null&&r[k]!==""?+r[k]||null:null});
+    r.primes=Array.isArray(r.primes)?r.primes.slice(0,8).map(p=>({libelle:String(p.libelle||"").slice(0,60),valeur:String(p.valeur??"").slice(0,30)})).filter(p=>p.libelle):[];
+    contratRes=r;showContrat(r);
+  }catch(e){if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;console.error(e);
+    openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div><details style="margin-top:10px"><summary class="sub">Détail technique</summary><div class="sub" style="word-break:break-word;margin-top:6px">${esc(String(e&&e.message||e).slice(0,400))}</div></details>`)}
+}
+function contratHTML(r){
+  const L=(k,v)=>v?`<div class="ln"><span>${k}</span><b style="text-align:right">${v}</b></div>`:"";
+  return `<div class="grid"><div class="card" style="background:var(--card2)"><div class="k">Mission</div><div class="v" style="font-size:16px">${esc(r.client||"—")}</div><div class="sub">${esc(r.agence||"")}</div></div>
+    <div class="card" style="background:var(--card2)"><div class="k">Taux brut</div><div class="v pos" style="font-size:20px">${r.taux_horaire_brut?eurT(r.taux_horaire_brut)+"/h":"—"}</div><div class="sub">${r.heures_semaine?fmtN(r.heures_semaine)+" h / semaine":""}</div></div></div>
+    ${r.resume?`<div class="est" style="margin-bottom:10px">${esc(r.resume)}</div>`:""}
+    ${L("Période",r.date_debut?`du ${new Date(r.date_debut+"T12:00").toLocaleDateString("fr-BE")}${r.date_fin?" au "+new Date(r.date_fin+"T12:00").toLocaleDateString("fr-BE"):""}`:"")}
+    ${L("Fonction",esc(r.fonction))}${L("Lieu",esc(r.lieu))}${L("Horaire",esc(r.horaire))}${L("Statut",esc(r.statut))}${L("Commission paritaire",esc(r.commission_paritaire))}
+    ${L("Chèque-repas",r.cheque_repas_valeur?eur2(r.cheque_repas_valeur):"")}${L("Déplacement",esc(r.deplacement))}${L("Motif",esc(r.motif))}
+    ${r.primes.length?`<div class="k" style="margin-top:12px">Primes et sursalaires</div>${r.primes.map(p=>L(esc(p.libelle),esc(p.valeur))).join("")}`:""}
+    ${r.heures_semaine&&r.taux_horaire_brut?`<div class="okbox" style="margin-top:12px">💶 Estimation : ≈ ${eur(r.heures_semaine*r.taux_horaire_brut*S.reglages.ratio/100)} net par semaine, ≈ ${eur(r.heures_semaine*4.33*r.taux_horaire_brut*S.reglages.ratio/100)} par mois (ratio ${S.reglages.ratio} %).</div>`:""}`;
+}
+function showContrat(r){
+  const lo=s=>(s||"").toLowerCase(),first=s=>lo(s).split(/[ .\-]/)[0];
+  const match=S.missions.find(m=>m.agence&&r.agence&&(lo(r.agence).includes(lo(m.agence))||lo(m.agence).includes(first(r.agence)))&&(!r.client||!m.client||lo(r.client).includes(first(m.client))||lo(m.client).includes(first(r.client))));
+  openRaw(`<h3>Ton contrat <button class="del" data-close>×</button></h3>${contratHTML(r)}
+   <form data-f="contrat" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+    <label>Mission<select name="mission"><option value="__new" ${match?"":"selected"}>➕ Nouvelle mission</option>${S.missions.map(m=>`<option value="${m.id}" ${match&&match.id===m.id?"selected":""}>Mettre à jour : ${esc(m.client||m.agence)}</option>`).join("")}</select></label>
+    ${match?`<p class="sub">Même agence et client qu'une mission existante : c'est sûrement une prolongation, je la mets à jour.</p>`:""}
+    <div class="two"><label>Agence<input name="agence" required value="${esc(r.agence||match?.agence||"")}"></label><label>Client / poste<input name="client" value="${esc(r.client||match?.client||"")}"></label></div>
+    <div class="two"><label>Début<input name="debut" type="date" value="${esc(match&&match.debut&&(!r.date_debut||match.debut<r.date_debut)?match.debut:(r.date_debut||today()))}"></label><label>Fin<input name="fin" type="date" value="${esc(r.date_fin||"")}"></label></div>
+    <div class="two"><label>Taux brut (€/h)<input name="taux" type="number" step="0.0001" inputmode="decimal" value="${r.taux_horaire_brut??match?.taux??""}"></label><label>Heures / semaine<input name="hsem" type="number" step="0.5" inputmode="decimal" value="${r.heures_semaine??match?.hsem??""}"></label></div>
+    ${r.statut&&!r.statut.startsWith(S.reglages.statut==="employe"?"empl":"ouv")?`<label class="chk"><input type="checkbox" name="statut" checked> Passer mon statut en « ${esc(r.statut)} » (pour le calcul du pécule)</label>`:""}
+    <button class="btn">${match?"Mettre à jour la mission":"Créer la mission"}</button></form>`);
+}
+function saveContrat(f,d){const r=contratRes;if(!r)return;
+  let m=d.mission==="__new"?null:S.missions.find(x=>x.id===d.mission);
+  if(!m){m={id:uid()};S.missions.push(m)}
+  Object.assign(m,{agence:d.agence,client:d.client||"",debut:d.debut||"",fin:d.fin||"",taux:d.taux?+d.taux:(m.taux||0),hsem:d.hsem?+d.hsem:(m.hsem||""),contrat:r});
+  if(f.statut&&f.statut.checked)S.reglages.statut=/empl/i.test(r.statut)?"employe":"ouvrier";
+  if(lastFile){const file=lastFile,mid=m.id;lastFile=null;savePhoto(file).then(ph=>{const x=S.missions.find(x=>x.id===mid);if(ph&&x){if(x.photo)delPhoto(x.photo);x.photo=ph;save()}})}
+  contratRes=null;closeSheet();save();toast(d.mission==="__new"?"Mission créée depuis le contrat ✓":"Mission mise à jour ✓");
+}
+
 /* ---------- formulaires ---------- */
 const COLL={depense:"depenses",paie:"paies",mission:"missions",fixe:"fixes",objectif:"objectifs",pointage:"pointage",dette:"dettes",cheques:"cr"};
 const EMOJIS=["🎯","🚗","🏖️","🏠","📱","🎓","💍","🎮","🛠️","🐶"];
@@ -577,7 +646,9 @@ function openSheet(type,ctx,item,opts={}){
     <form data-f="mission" data-id="${V("id")}"><div class="two"><label>Agence<input name="agence" required placeholder="ex. ASAP" value="${V("agence")}" list="agList"></label><label>Client / poste<input name="client" placeholder="ex. Magasinier" value="${V("client")}"></label></div>
     <datalist id="agList">${[...new Set(S.missions.map(m=>m.agence).filter(Boolean))].map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
     <div class="two"><label>Début<input name="debut" type="date" value="${V("debut",today())}"></label><label>Fin prévue<input name="fin" type="date" value="${V("fin")}"></label></div>
-    <label>Taux horaire brut (€)<input name="taux" type="number" step="0.0001" inputmode="decimal" value="${V("taux")}"></label>
+    <div class="two"><label>Taux horaire brut (€)<input name="taux" type="number" step="0.0001" inputmode="decimal" value="${V("taux")}"></label><label>Heures / semaine<input name="hsem" type="number" step="0.5" inputmode="decimal" placeholder="ex. 38" value="${V("hsem")}"></label></div>
+    ${it.contrat?`<button type="button" class="btn sec" data-cdetail="${it.id}">📑 Voir le détail du contrat</button>`:""}
+    ${ed?(it.photo?`<div class="two"><button type="button" class="btn sec" data-photo="${it.photo}">🖼️ Voir le contrat</button><button type="button" class="btn sec" data-attach="missions:${it.id}">🔄 Remplacer</button></div>`:`<button type="button" class="btn sec" data-attach="missions:${it.id}">📎 Joindre le contrat (photo / PDF)</button>`):""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
    fixe:`${head(ed?"Modifier la charge":"Charge fixe mensuelle")}
     <form data-f="fixe" data-id="${V("id")}"><label>Nom<input name="nom" required placeholder="ex. Loyer" value="${V("nom")}"></label>
@@ -620,7 +691,7 @@ function openSheet(type,ctx,item,opts={}){
     ${ed?`<label class="chk"><input type="checkbox" name="regle" ${it.regle?"checked":""}> Réglé</label>`:""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
    choix:`${head("Ajouter")}
-    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn scanBtn" data-mode="facture" ${canImg?"":"hidden"}>🧾 Scanner une facture / un ticket</button><button class="btn" data-open="depense">💸 Une dépense</button><button class="btn sec" data-open="paie">💶 Une paie reçue</button><button class="btn sec" data-open="mission">🏭 Une mission</button><button class="btn sec" data-open="fixe">🔁 Une charge fixe</button><button class="btn sec" data-open="epargne">🛟 Mettre de côté</button><button class="btn sec" data-open="objectif">🎯 Un objectif</button><button class="btn sec" data-open="pointage">⏱️ Pointer des heures</button><button class="btn sec" data-open="cheques">🍽️ Chèques-repas</button><button class="btn sec" data-open="dette">🤝 Dette / prêt</button></div>`
+    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn scanBtn" data-mode="facture" ${canImg?"":"hidden"}>🧾 Scanner une facture / un ticket</button><button class="btn scanBtn" data-mode="contrat" ${canImg?"":"hidden"}>📑 Scanner un contrat</button><button class="btn" data-open="depense">💸 Une dépense</button><button class="btn sec" data-open="paie">💶 Une paie reçue</button><button class="btn sec" data-open="mission">🏭 Une mission</button><button class="btn sec" data-open="fixe">🔁 Une charge fixe</button><button class="btn sec" data-open="epargne">🛟 Mettre de côté</button><button class="btn sec" data-open="objectif">🎯 Un objectif</button><button class="btn sec" data-open="pointage">⏱️ Pointer des heures</button><button class="btn sec" data-open="cheques">🍽️ Chèques-repas</button><button class="btn sec" data-open="dette">🤝 Dette / prêt</button></div>`
   };
   $("sheet").innerHTML=H[type];$("sheetBg").classList.add("open");
   if(type==="paie"){
@@ -859,7 +930,7 @@ document.addEventListener("submit",e=>{
     else if(mid){const m=S.missions.find(x=>x.id===mid);if(m&&!m.taux&&r.taux_horaire_brut)m.taux=r.taux_horaire_brut}
     if(f.ratio&&f.ratio.checked&&r.brut&&r.net)S.reglages.ratio=Math.round(r.net/r.brut*100);
     if(f.pointer&&f.pointer.checked)r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date)).forEach(j=>S.pointage.push({id:uid(),mission:mid||"",date:j.date,heures:j.heures,type:"normal"}));
-    if(f.crAdd&&f.crAdd.checked)S.cr.push({id:uid(),date:d.date,nb:r.cheques_repas_nombre,valeur:r.cheques_repas_valeur||8,used:0});
+    if(f.crAdd&&f.crAdd.checked)S.cr.push({id:uid(),date:d.date,nb:r.cheques_repas_nombre,valeur:r.cheques_repas_valeur||((S.missions.find(x=>x.id===mid)||{}).contrat||{}).cheque_repas_valeur||8,used:0});
     S.paies.push({id:d.id,mission:mid||"",date:d.date,montant:+d.montant,recu:!!f.recu.checked,heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});
     if(lastFile){const pid=d.id,file=lastFile;lastFile=null;savePhoto(file).then(ph=>{const p=S.paies.find(x=>x.id===pid);if(ph&&p){p.photo=ph;save()}})}
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
@@ -872,6 +943,7 @@ document.addEventListener("submit",e=>{
     else{const fx=S.fixes.find(x=>r.recurrent&&r.fournisseur&&x.nom.toLowerCase().includes(r.fournisseur.toLowerCase().split(" ")[0]));if(fx)dep.fixe=fx.id}
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
     factRes=null;closeSheet();save();toast(dep.paye?"Dépense ajoutée ✓":"Ajoutée · à payer avant le "+fmtD(dep.echeance||d.date));return}
+  if(t==="contrat"&&contratRes){saveContrat(f,d);return}
   if(t==="multi"&&multiRes.length){let n=0;multiRes.forEach(({r,file},i)=>{if(!f["m"+i]||!f["m"+i].checked)return;const id=uid();
       S.depenses.push({id,montant:r.montant_total,cat:r.categorie,date:r.date,note:r.fournisseur||"",paye:!(r.echeance&&!r.deja_paye),echeance:r.echeance&&!r.deja_paye?r.echeance:"",detail:r});n++;
       savePhoto(file).then(ph=>{const x=S.depenses.find(x=>x.id===id);if(ph&&x){x.photo=ph;save()}})});
@@ -889,7 +961,7 @@ document.addEventListener("submit",e=>{
     closeSheet();save();toast(m>0?`+${eur2(m)} mis de côté 💪`:`${eur2(m)} retiré`);return}
   // ajout / modification générique
   const fix={depense:x=>{x.montant=+x.montant;x.paye=!!f.paye.checked;if(x.paye)x.echeance=""},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.heures=x.heures?+x.heures:""},
-    mission:x=>{x.taux=x.taux?+x.taux:0},fixe:x=>{x.montant=+x.montant},objectif:x=>{x.cible=+x.cible;x.actuel=+x.actuel||0},
+    mission:x=>{x.taux=x.taux?+x.taux:0;x.hsem=x.hsem?+x.hsem:""},fixe:x=>{x.montant=+x.montant},objectif:x=>{x.cible=+x.cible;x.actuel=+x.actuel||0},
     pointage:x=>{x.heures=+x.heures;delete x.semaine},cheques:x=>{x.nb=+x.nb;x.valeur=+x.valeur;x.used=+x.used||0},dette:x=>{x.montant=+x.montant;x.regle=!!(f.regle&&f.regle.checked)}};
   if(!fix[t])return;
   if(t==="pointage"&&!f.dataset.id&&f.semaine&&f.semaine.checked){const d0=new Date(d.date+"T12:00");const mon=new Date(d0);mon.setDate(d0.getDate()-((d0.getDay()+6)%7));
@@ -908,7 +980,7 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
-  if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";pickSource(m==="facture"?"Scanner une facture / un ticket":"Scanner une fiche de paie",f=>(m==="facture"?scanFacture:scanFile)(f));return}
+  if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";const T={facture:"Scanner une facture / un ticket",contrat:"Scanner un contrat",paie:"Scanner une fiche de paie"},F={facture:scanFacture,contrat:scanContrat,paie:scanFile};pickSource(T[m]||T.paie,f=>(F[m]||scanFile)(f));return}
   if(b.dataset.src){choosePick(b.dataset.src);return}
   if(b.dataset.ask){chatSend(b.dataset.ask);return}
   if(b.dataset.ptype){document.querySelectorAll("#typeChips button").forEach(x=>x.classList.toggle("on",x===b));$("typeIn").value=b.dataset.ptype;return}
@@ -930,6 +1002,7 @@ document.addEventListener("click",e=>{
     {const o=(S[k]||[]).find(x=>x.id===id);if(o&&o.photo)delPhoto(o.photo)}S[k]=S[k].filter(x=>x.id!==id);if(k==="missions")S.paies.forEach(p=>{if(p.mission===id)p.mission=""});closeSheet();save();toast("Supprimé");return}
   if(b.dataset.photo){openPhoto(b.dataset.photo);return}
   if(b.dataset.attach){const tg=b.dataset.attach;pickSource("Joindre un document",f=>attachPhoto(tg,f));return}
+  if(b.dataset.cdetail){const m=S.missions.find(x=>x.id===b.dataset.cdetail);if(m&&m.contrat)openRaw(`<h3>Contrat <button class="del" data-close>×</button></h3>${contratHTML(m.contrat)}`);return}
   if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
   if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail)openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${detailHTML(p.detail)}`);return}
   if(b.dataset.v){document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.v===b.dataset.v));

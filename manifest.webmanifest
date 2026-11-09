@@ -13,6 +13,7 @@
     { "name": "Ajouter une dépense", "short_name": "Dépense", "url": "./?a=depense", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
     { "name": "Scanner une facture", "short_name": "Facture", "url": "./?a=facture", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
     { "name": "Scanner une fiche de paie", "short_name": "Fiche de paie", "url": "./?a=paie", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Scanner un contrat", "short_name": "Contrat", "url": "./?a=contrat", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
     { "name": "Pointer mes heures", "short_name": "Pointage", "url": "./?a=pointage", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
   ],
   "icons": [
