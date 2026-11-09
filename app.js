@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=20";
+import * as CFG from "./firebase-config.js?v=21";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=20;
+const APP_VERSION=21;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -196,6 +196,9 @@ function render(){
     else A.push(["ok","Mission en cours",`${esc(m.client||m.agence)}${m.taux?" · "+eurT(m.taux)+"/h brut":""}`])});
   const att=S.paies.filter(p=>!p.recu&&!p.archive&&p.date<t);
   if(att.length)A.push(["",`${att.length} paie${att.length>1?"s":""} en retard`,`${eur(sum(att,p=>p.montant))} attendus depuis le ${fmtD(att.map(p=>p.date).sort()[0])}. Vérifie ton compte ou relance l'agence.`]);
+  {const dP=S.paies.filter(p=>p.detail&&!p.archive&&!p.ctrlVu).sort((x,y)=>y.date.localeCompare(x.date))[0];
+    if(dP){const m=S.missions.find(x=>x.id===dP.mission),I=controlePaie(dP.detail,m,dP.id),B=ctrlBilan(I);
+      if(B.bad+B.warn)A.push([B.bad?"bad":"",`Ta paie du ${fmtD(dP.date).replace(/\.$/,"")} : ${B.bad+B.warn} point${B.bad+B.warn>1?"s":""} à vérifier`,esc(I.filter(x=>x.s==="bad"||x.s==="warn").map(x=>x.t).join(", ")),`<button class="btn sm" data-detail="${dP.id}" style="margin-top:10px">Voir le contrôle</button>`])}}
   const ap=S.depenses.filter(x=>x.paye===false).sort((a,b)=>(a.echeance||"9").localeCompare(b.echeance||"9"));
   if(ap.length){const late=ap.filter(x=>x.echeance&&x.echeance<t),soon=ap.filter(x=>x.echeance&&x.echeance>=t&&daysTo(x.echeance)<=7);
     A.push([late.length?"bad":soon.length?"":"ok",`${ap.length} facture${ap.length>1?"s":""} à payer · ${eur(sum(ap,x=>x.montant))}`,ap.slice(0,3).map(x=>`${esc(x.note||x.cat)} ${eur2(x.montant)}${x.echeance?(x.echeance<t?" — <b style='color:var(--bad)'>en retard</b>":" — avant le "+fmtD(x.echeance)):""}`).join("<br>")])}
@@ -206,7 +209,7 @@ function render(){
   const deja=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)&&x.montant>0),x=>x.montant);
   const aside=Math.max(0,M.recu*R.pct/100-deja);
   if(aside>=1&&R.pct>0) A.push(["ok",`Mets ${eur(aside)} de côté`,`${R.pct}% de tes paies reçues ce mois, pour tenir pendant les périodes sans mission.`,`<button class="btn sm" data-open="epargne" data-amt="${aside.toFixed(2)}" style="margin-top:10px">C'est fait</button>`]);
-  const AI=t=>/mission en cours/i.test(t)?"✅":/pas de mission/i.test(t)?"⚠️":/fin de mission/i.test(t)?"⏳":/paie/i.test(t)?"💶":/facture/i.test(t)?"🧾":/budget/i.test(t)?"📊":/de côté/i.test(t)?"🐷":/mission/i.test(t)?"🏭":"📌";
+  const AI=t=>/à vérifier/i.test(t)?"🔎":/mission en cours/i.test(t)?"✅":/pas de mission/i.test(t)?"⚠️":/fin de mission/i.test(t)?"⏳":/paie/i.test(t)?"💶":/facture/i.test(t)?"🧾":/budget/i.test(t)?"📊":/de côté/i.test(t)?"🐷":/mission/i.test(t)?"🏭":"📌";
   A.sort((x,y)=>(y[0]==="bad")-(x[0]==="bad"));
   const aH=x=>`<div class="card alert ${x[0]}"><span class="ai">${AI(x[1])}</span><div style="flex:1;min-width:0"><div class="t">${x[1]}</div><p>${x[2]}</p>${x[3]||""}</div></div>`;
   $("alerts").innerHTML=A.slice(0,alertsAll?99:3).map(aH).join("")+(A.length>3&&!alertsAll?`<button type="button" class="more-alerts" data-moreal="1">Voir ${A.length-3} autre${A.length-3>1?"s":""} info${A.length-3>1?"s":""}</button>`:"");
@@ -251,7 +254,8 @@ function render(){
   // paies
   const pm=[...M.pAll].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
-    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||(p.autre?"Rentrée":"Paie")))}${p.autre?'<span class="pill">rentrée</span>':""}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
+    let cb="";if(p.detail&&!p.archive){const B=ctrlBilan(controlePaie(p.detail,m,p.id));cb=p.ctrlVu?'<span class="pill">✓ vérifiée</span>':B.bad?`<span class="pill r">❌ ${B.bad+B.warn} à vérifier</span>`:B.warn?`<span class="pill y">⚠️ ${B.warn} à vérifier</span>`:'<span class="pill ok">✅ contrôlée</span>'}
+    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||(p.autre?"Rentrée":"Paie")))}${p.autre?'<span class="pill">rentrée</span>':""}${cb}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
     `<span class="amt ${p.archive?"":p.recu?"pos":"pend"}" ${p.archive?"":`data-toggle="${p.id}"`} style="cursor:pointer;${p.archive?"color:var(--mut)":""}">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`,{i:p.autre?"💰":p.archive?"📚":"💶",c:p.archive?"pay arch":"pay"})}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:vide("💶","Aucune paie ce mois.<br>Scanne ta fiche de paie ou ajoute-la à la main.");
 
   // fixes
@@ -1229,23 +1233,79 @@ function showFacture(r){
     ${r.recurrent&&dejaFixe?`<p class="sub">Déjà dans tes charges fixes : « ${esc(dejaFixe.nom)} » (${eur2(dejaFixe.montant)}/mois).</p>`:""}
     <button class="btn">Enregistrer la dépense</button></form>`);
 }
+
+/* ---------- contrôle de fiche de paie ---------- */
+function controlePaie(r,m,pid){ // renvoie [{s:"ok"|"warn"|"bad"|"info",t,d}]
+  const I=[],L=r.lignes||[],J=Array.isArray(r.jours)?r.jours:[],has=re=>L.find(l=>re.test(nrm(l.libelle||"")));
+  const ct=(m&&m.contrat)||{},add=(s,t,d)=>I.push({s,t,d:d||""});
+  // taux horaire
+  const tPrev=+(m&&m.taux)||+ct.taux_horaire_brut||0;
+  if(r.taux_horaire_brut&&tPrev){if(Math.abs(tPrev-r.taux_horaire_brut)>0.005)add(r.taux_horaire_brut<tPrev?"bad":"info","Taux horaire",`${eurT(r.taux_horaire_brut)} sur la fiche, ${eurT(tPrev)} prévu${m&&m.contrat?" dans ton contrat":" pour la mission"}.`);else add("ok","Taux horaire",`${eurT(tPrev)} brut, comme prévu.`)}
+  // heures payées vs pointées
+  if(r.periode_debut&&r.periode_fin&&r.heures){const pt=S.pointage.filter(x=>x.date>=r.periode_debut&&x.date<=r.periode_fin&&(!m||!x.mission||x.mission===m.id));
+    if(pt.length){const hp=sum(pt,x=>x.heures);
+      if(hp-r.heures>0.25)add("bad","Heures payées",`Tu as pointé ${fmtN(hp)} h mais ${fmtN(r.heures)} h sont payées : il manque ${fmtN(hp-r.heures)} h (≈ ${eur2((hp-r.heures)*(r.taux_horaire_brut||tPrev||0))} brut).`);
+      else if(r.heures-hp>0.25)add("info","Heures payées",`${fmtN(r.heures)} h payées pour ${fmtN(hp)} h pointées : ton pointage est peut-être incomplet.`);
+      else add("ok","Heures payées",`${fmtN(r.heures)} h, comme ton pointage.`)}
+    else add("info","Heures payées",`${fmtN(r.heures)} h payées. Pointe tes heures (Outils → Pointage) pour que je puisse les comparer.`)}
+  if(J.length&&r.heures){const hj=sum(J,j=>j.heures);if(Math.abs(hj-r.heures)>0.25)add("warn","Détail des jours",`Les jours détaillés font ${fmtN(hj)} h, mais ${fmtN(r.heures)} h sont payées.`)}
+  // calcul heures × taux
+  if(r.heures&&r.taux_horaire_brut){const g=L.find(l=>l.type==="gain"&&/heure|presta|prest|uren|salaire de base/.test(nrm(l.libelle||"")));
+    if(g){const att=r.heures*r.taux_horaire_brut;if(Math.abs(g.montant-att)>1)add(g.montant<att?"bad":"info","Calcul du salaire",`${fmtN(r.heures)} h × ${eurT(r.taux_horaire_brut)} = ${eur2(att)}, mais la fiche indique ${eur2(g.montant)}.`);else add("ok","Calcul du salaire",`${fmtN(r.heures)} h × ${eurT(r.taux_horaire_brut)} = ${eur2(att)}.`)}}
+  // heures sup
+  if(r.heures&&r.periode_debut&&r.periode_fin){const sem=Math.max(1,Math.round((new Date(r.periode_fin)-new Date(r.periode_debut))/864e5+1)/7);const lourd=r.heures/sem>40.5||J.some(j=>+j.heures>9.5);
+    if(lourd&&!has(/sursal|suppl|overtime|majoration|\b150\b|50 ?%|heures sup/))add("warn","Heures supplémentaires",`Plus de 40 h par semaine (ou plus de 9 h 30 sur un jour) mais aucun sursalaire visible. Les heures sup sont normalement payées +50 %.`)}
+  // ONSS
+  const on=L.find(l=>l.type==="retenue"&&/onss|rsz|cotis.*(soc|pers)|securite sociale|sec\.? ?soc/.test(nrm(l.libelle||"")));
+  if(on&&r.brut){const ouv=(S.reglages.statut||"ouvrier")==="ouvrier",att=r.brut*0.1307*(ouv?1.08:1),att2=r.brut*0.1307;
+    if(on.montant>Math.max(att,att2)*1.04+2)add("warn","Cotisations ONSS",`${eur2(on.montant)} retenus, c'est plus que les 13,07 % habituels (≈ ${eur2(att)}${ouv?" pour un ouvrier, sur 108 % du brut":""}).`);
+    else if(on.montant<Math.min(att,att2)*0.9-2)add("ok","Cotisations ONSS",`${eur2(on.montant)} : moins que 13,07 %, c'est sûrement le bonus à l'emploi (réduction pour les petits salaires), tant mieux pour toi.`);
+    else add("ok","Cotisations ONSS",`${eur2(on.montant)} ≈ 13,07 %${ouv?" de 108 % du brut":" du brut"}.`)}
+  // net / brut
+  if(r.brut&&r.net){const q=r.net/r.brut;if(q<0.6||q>1.05)add("warn","Net par rapport au brut",`Le net fait ${Math.round(q*100)} % du brut : inhabituel, vérifie les retenues.`)}
+  // chèques-repas
+  const jours=J.length||(r.periode_debut&&r.periode_fin?new Set(S.pointage.filter(x=>x.date>=r.periode_debut&&x.date<=r.periode_fin&&+x.heures>0).map(x=>x.date)).size:0);
+  const crPrevu=!!ct.cheque_repas_valeur||S.paies.some(p=>p.id!==pid&&p.mission&&m&&p.mission===m.id&&p.detail&&p.detail.cheques_repas_nombre);
+  const ncr=+r.cheques_repas_nombre||0;
+  if(ncr&&jours){if(ncr<jours)add("bad","Chèques-repas",`${ncr} chèque(s) pour ${jours} jour(s) prestés : il en manquerait ${jours-ncr} (1 par jour travaillé).`);else add("ok","Chèques-repas",`${ncr} chèque(s) pour ${jours} jour(s) prestés.`)}
+  else if(!ncr&&crPrevu)add("bad","Chèques-repas",`Aucun chèque-repas sur cette fiche alors que ${ct.cheque_repas_valeur?"ton contrat en prévoit ("+eur2(ct.cheque_repas_valeur)+")":"tu en reçois d'habitude"}.`);
+  else if(ncr)add("ok","Chèques-repas",`${ncr} chèque(s)-repas.`);
+  // primes du contrat
+  (Array.isArray(ct.primes)?ct.primes:[]).forEach(p=>{const mot=nrm(p.libelle||"").split(/[^a-z]+/).filter(w=>w.length>=5&&!/prime|indemn|sursal/.test(w))[0];if(!mot)return;
+    if(!has(new RegExp(mot)))add("warn","Prime du contrat",`« ${p.libelle} » (${p.valeur||"prévue"}) n'apparaît pas sur la fiche.`);else add("ok","Prime du contrat",`« ${p.libelle} » est bien payée.`)});
+  // déplacement
+  const dpl=has(/mobil|deplac|transport|km|navette|vervoer|trajet/);
+  if(dpl)add("ok","Frais de déplacement",`${dpl.libelle} : ${eur2(dpl.montant)}.`);
+  else if(ct.deplacement)add("warn","Frais de déplacement",`Ton contrat prévoit : ${ct.deplacement}. Rien n'apparaît sur la fiche.`);
+  else if(m&&(+m.km>0||S.reglages.domicile))add("info","Frais de déplacement",`Aucune intervention dans tes trajets. Selon le secteur, tu peux y avoir droit : demande à ton agence.`);
+  // période dans la mission
+  if(m&&r.periode_debut&&((m.debut&&r.periode_fin<m.debut)||(m.fin&&r.periode_debut>m.fin)))add("info","Période",`La période (${fmtD(r.periode_debut)} → ${fmtD(r.periode_fin)}) est en dehors des dates de la mission.`);
+  // net reçu sur le compte
+  const dp=r.date_paiement||r.periode_fin;
+  if(r.net&&dp){const ag=m&&m.agence?nrm(m.agence).split(/[ .]/)[0]:"";const b=S.paies.find(p=>p.id!==pid&&!p.detail&&!p.autre&&p.recu&&Math.abs(new Date(p.date)-new Date(dp))<=10*864e5&&(!ag||nrm(p.note||"").includes(ag)||p.mission===(m&&m.id)));
+    if(b){if(Math.abs(b.montant-r.net)>0.5)add("bad","Montant reçu",`Sur ton compte : ${eur2(b.montant)} le ${fmtD(b.date)}, mais la fiche annonce ${eur2(r.net)} net (écart ${eur2(r.net-b.montant)}).`);else add("ok","Montant reçu",`${eur2(b.montant)} bien arrivé sur ton compte.`)}}
+  return I;
+}
+const ctrlBilan=I=>({bad:I.filter(x=>x.s==="bad").length,warn:I.filter(x=>x.s==="warn").length,ok:I.filter(x=>x.s==="ok").length});
+function ctrlHTML(I,pid){if(!I.length)return "";const B=ctrlBilan(I),pb=B.bad+B.warn,IC={ok:"✅",warn:"⚠️",bad:"❌",info:"ℹ️"},ord={bad:0,warn:1,info:2,ok:3};
+  return `<div class="card ctrl ${B.bad?"bad":B.warn?"warn":"ok"}"><div class="ctrl-h"><span>${B.bad?"❌":B.warn?"⚠️":"✅"}</span><div><b>${pb?pb+" point"+(pb>1?"s":"")+" à vérifier":"Fiche correcte"}</b><small>${B.ok} contrôle${B.ok>1?"s":""} OK sur ${I.length}</small></div></div>
+  ${[...I].sort((x,y)=>ord[x.s]-ord[y.s]).map(x=>`<div class="ctrl-i ${x.s}"><span>${IC[x.s]}</span><div><b>${esc(x.t)}</b><small>${esc(x.d)}</small></div></div>`).join("")}
+  ${pb?`<div class="two" style="margin-top:12px"><button type="button" class="btn sm" data-agmsg="${pid||"__scan"}">✉️ Écrire à l'agence</button>${pid?`<button type="button" class="btn sec sm" data-ctrlvu="${pid}">✓ C'est réglé</button>`:""}</div>`:""}</div>`}
+const jeDis=s=>s.replace(/\bTu as\b/g,"J'ai").replace(/\btu as\b/g,"j'ai").replace(/\bton (compte|contrat|pointage)\b/gi,(_,w)=>"mon "+w).replace(/\btu en reçois\b/g,"j'en reçois").replace(/\bTon\b/g,"Mon").replace(/\btes\b/g,"mes").replace(/\btu\b/g,"je");
+function msgAgence(r,m,I){const pb=I.filter(x=>x.s==="bad"||x.s==="warn");
+  const per=r.periode_debut&&r.periode_fin?` du ${new Date(r.periode_debut+"T12:00").toLocaleDateString("fr-BE")} au ${new Date(r.periode_fin+"T12:00").toLocaleDateString("fr-BE")}`:"";
+  return `Bonjour,\n\nJ'ai vérifié ma fiche de paie${per}${m?` (mission ${m.client||m.agence})`:""} et certains points me posent question :\n\n${pb.map(x=>"• "+x.t+" : "+jeDis(x.d)).join("\n")}\n\nPourriez-vous vérifier et me tenir au courant ? Merci d'avance.\n\nBonne journée`}
+let scanCtrl=null;
 function showScan(r){
   const ag=(r.agence||"").toLowerCase();
   const match=S.missions.find(m=>ag&&m.agence&&(ag.includes(m.agence.toLowerCase())||m.agence.toLowerCase().includes(ag.split(" ")[0])));
   const date=r.date_paiement||r.periode_fin||today();const vieille=date<mkey(new Date())+"-01";
   const ratio=r.brut&&r.net?Math.round(r.net/r.brut*100):null;
-  // contrôle de la fiche
-  const W=[];
-  if(match&&+match.taux>0&&r.taux_horaire_brut&&Math.abs(match.taux-r.taux_horaire_brut)>0.005)W.push(`Taux horaire : ${eurT(r.taux_horaire_brut)} sur la fiche, ${eurT(match.taux)} prévu pour la mission.`);
-  if(r.periode_debut&&r.periode_fin){const pt=S.pointage.filter(x=>x.date>=r.periode_debut&&x.date<=r.periode_fin&&(!match||!x.mission||x.mission===match.id));
-    if(pt.length&&r.heures){const hp=sum(pt,x=>x.heures);if(Math.abs(hp-r.heures)>0.25)W.push(hp>r.heures?`Heures : tu as pointé ${fmtN(hp)} h mais seulement ${fmtN(r.heures)} h sont payées — il manquerait ${fmtN(hp-r.heures)} h ! Vérifie avec ton agence.`:`Heures : ${fmtN(r.heures)} h payées pour ${fmtN(hp)} h pointées (ton pointage est peut-être incomplet).`)}}
-  if(r.heures&&r.taux_horaire_brut){const g=(r.lignes||[]).find(l=>l.type==="gain"&&/heure/i.test(l.libelle));if(g&&Math.abs(g.montant-r.heures*r.taux_horaire_brut)>1)W.push(`Calcul des heures : ${fmtN(r.heures)} h × ${eurT(r.taux_horaire_brut)} = ${eur2(r.heures*r.taux_horaire_brut)}, mais la fiche indique ${eur2(g.montant)}.`)}
-  if(r.brut&&r.net&&(r.net/r.brut<0.6||r.net/r.brut>1.05))W.push(`Le net représente ${Math.round(r.net/r.brut*100)} % du brut : c'est inhabituel, vérifie les retenues.`);
-  if(r.jours.length&&r.heures){const hj=sum(r.jours,j=>j.heures);if(Math.abs(hj-r.heures)>0.25)W.push(`Le détail des jours fait ${fmtN(hj)} h, mais ${fmtN(r.heures)} h sont payées.`)}
+  const W=[];const CI=controlePaie(r,match);scanCtrl={r,m:match,I:CI};
   const newDays=r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date));
   const exP=r.net?S.paies.find(p=>memePaie(p,date,r.net)):null;
   if(exP&&exP.detail)W.unshift(`🔁 Cette fiche semble <b>déjà enregistrée</b> (${eur2(exP.montant)} le ${fmtD(exP.date)}). L'enregistrer créerait un doublon.`);
-  const ctrl=W.length?`<div class="warnbox"><b>⚠️ À vérifier</b><br>${W.join("<br>")}</div>`:(r.heures||r.taux_horaire_brut)?`<div class="okbox">✅ Fiche cohérente : heures, taux et montants concordent.</div>`:"";
+  const ctrl=(W.length?`<div class="warnbox">${W.join("<br>")}</div>`:"")+ctrlHTML(CI);
   openRaw(`<h3>Ta fiche de paie <button class="del" data-close>×</button></h3>${ctrl}${detailHTML(r)}
    <form data-f="scan" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
     <div class="two"><label>Net à enregistrer (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${r.net??""}"></label><label>Date<input name="date" type="date" required value="${esc(date)}"></label></div>
@@ -1357,7 +1417,13 @@ document.addEventListener("click",e=>{
   if(b.dataset.edit2){const[ty,id]=b.dataset.edit2.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.cdetail){const m=S.missions.find(x=>x.id===b.dataset.cdetail);if(m&&m.contrat)openRaw(`<h3>Contrat <button class="del" data-close>×</button></h3>${contratHTML(m.contrat)}`);return}
   if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
-  if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail)openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${detailHTML(p.detail)}`);return}
+  if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail){const m=S.missions.find(x=>x.id===p.mission);openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${ctrlHTML(controlePaie(p.detail,m,p.id),p.id)}${detailHTML(p.detail)}`)}return}
+  if(b.dataset.agmsg){let r,m,I;if(b.dataset.agmsg==="__scan"&&scanCtrl)({r,m,I}=scanCtrl);else{const p=S.paies.find(x=>x.id===b.dataset.agmsg);if(!p||!p.detail)return;r=p.detail;m=S.missions.find(x=>x.id===p.mission);I=controlePaie(r,m,p.id)}
+    const txt=msgAgence(r,m,I);
+    openRaw(`<h3>Message pour ton agence <button class="del" data-close>×</button></h3><p class="sub" style="margin-bottom:10px">Relis-le, modifie si besoin, puis envoie-le par mail ou WhatsApp.</p><textarea id="agTxt" style="height:260px;font-family:inherit;font-size:14px;line-height:1.45">${esc(txt)}</textarea><div class="two" style="margin-top:12px"><button type="button" class="btn" id="agShare">📤 Envoyer</button><button type="button" class="btn sec" id="agCopy">📋 Copier</button></div>`);
+    $("agCopy").onclick=async()=>{try{await navigator.clipboard.writeText($("agTxt").value);toast("Message copié ✓")}catch(e){$("agTxt").select();document.execCommand("copy");toast("Message copié ✓")}};
+    $("agShare").onclick=async()=>{const t=$("agTxt").value;if(navigator.share){try{await navigator.share({title:"Ma fiche de paie",text:t})}catch(e){}}else{location.href="mailto:?subject="+encodeURIComponent("Question sur ma fiche de paie")+"&body="+encodeURIComponent(t)}};return}
+  if(b.dataset.ctrlvu){const p=S.paies.find(x=>x.id===b.dataset.ctrlvu);if(p){p.ctrlVu=true;save();closeSheet();toast("Noté, paie marquée comme vérifiée ✓")}return}
   if(b.dataset.moreal){alertsAll=true;render();return}
   if(b.dataset.go==="releve"){closeSheet();$("bReleve").click();return}
   if(b.dataset.acc){const d=$("acc-"+b.dataset.acc);if(d){d.open=true;setTimeout(()=>d.scrollIntoView({behavior:"smooth",block:"start"}),30)}return}

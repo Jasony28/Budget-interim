@@ -315,6 +315,15 @@ details.acc[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px
 .search-w input{padding-left:42px}
 .seclink{display:flex;justify-content:space-between;align-items:center}
 @media (prefers-reduced-motion:reduce){.view.on,.sheet,.sheet-bg{animation:none;transition:none}}
+
+.ctrl{background:var(--card2);padding:14px}
+.ctrl.ok{border-color:rgba(74,222,128,.35)}.ctrl.warn{border-color:rgba(251,191,36,.45)}.ctrl.bad{border-color:rgba(255,77,94,.55)}
+.ctrl-h{display:flex;gap:12px;align-items:center;margin-bottom:6px}.ctrl-h>span{font-size:26px}
+.ctrl-h b{display:block;font-size:16px}.ctrl-h small{color:var(--mut);font-size:12px}
+.ctrl-i{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:13px;line-height:1.4}
+.ctrl-i>span{flex:none;width:20px;text-align:center}.ctrl-i b{display:block;font-size:13.5px}.ctrl-i small{color:var(--mut);font-size:12.5px}
+.ctrl-i.bad b{color:#ff8a95}.ctrl-i.warn b{color:var(--warn)}.ctrl-i.ok{opacity:.85}
+.pill.ok{background:#0b2a17;color:var(--pos)}
 </style>
 </head>
 <body class="signed-out">
@@ -603,7 +612,7 @@ details.acc[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 20</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 21</p>
     </div>
   </section>
 </main>
@@ -625,6 +634,6 @@ details.acc[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=20"></script>
+<script type="module" src="app.js?v=21"></script>
 </body>
 </html>
