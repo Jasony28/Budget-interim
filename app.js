@@ -3,9 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=14";
+import * as CFG from "./firebase-config.js?v=15";
+const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
+const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=14;
+const APP_VERSION=15;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -420,6 +422,8 @@ function renderSettings(){
   const np=("Notification" in window)?Notification.permission:"unsupported";
   $("notifState").textContent=np==="granted"?"Activés : factures à payer, fins de mission, prélèvements, chèques-repas qui expirent.":np==="denied"?"Bloqués dans les réglages du téléphone/navigateur.":np==="unsupported"?"Non pris en charge sur cet appareil.":"Désactivés.";
   $("bNotif").hidden=np==="granted"||np==="unsupported";
+  const am=LS.get("aiModele",null),ep=LS.get("aiEpuise",{}),jr=new Date().toISOString().slice(0,10),nEp=Object.values(ep).filter(v=>v===jr).length;
+  $("aiState").textContent=!canImg?"Gemini n'est pas disponible.":`Modèle utilisé : ${am||geminiModel}${nEp?` · ${nEp} modèle(s) au quota épuisé aujourd'hui (bascule automatique)`:""}.`;
   const lb=LS.get("lastBackup",null);$("lastBackup").textContent=lb?"dernière copie le "+new Date(lb).toLocaleDateString("fr-BE")+".":"aucune copie pour l'instant.";
 }
 $("fCat").onsubmit=e=>{e.preventDefault();e.stopPropagation();const v=$("catNew").value.trim().slice(0,30);if(!v)return;if(cats().includes(v)){toast("Existe déjà");return}S.cats=[...cats(),v];$("catNew").value="";save();toast("Catégorie ajoutée")};
@@ -971,8 +975,19 @@ function initAI(){
     if(recaptchaV3SiteKey)initializeAppCheck(app,{provider:new ReCaptchaV3Provider(recaptchaV3SiteKey),isTokenAutoRefreshEnabled:true});
     else if(recaptchaEnterpriseSiteKey)initializeAppCheck(app,{provider:new ReCaptchaEnterpriseProvider(recaptchaEnterpriseSiteKey),isTokenAutoRefreshEnabled:true});
     const ai=getAI(app,{backend:new GoogleAIBackend()});
-    model=getGenerativeModel(ai,{model:geminiModel,generationConfig:{responseMimeType:"application/json",temperature:0}});
-    textModel=getGenerativeModel(ai,{model:geminiModel,generationConfig:{temperature:0.4}});
+    // Chaîne de modèles : bascule automatique si quota épuisé (429) ou modèle retiré (404)
+    const noms=[geminiModel,...geminiFallbacks.filter(n=>n&&n!==geminiModel)];
+    const mk=json=>noms.map(n=>({n,m:getGenerativeModel(ai,{model:n,generationConfig:json?{responseMimeType:"application/json",temperature:0}:{temperature:0.4}})}));
+    const chaines={json:mk(true),text:mk(false)};
+    const gen=async(parts,kind)=>{const ep=LS.get("aiEpuise",{}),jour=new Date().toISOString().slice(0,10);let last;
+      for(const {n,m} of chaines[kind]){if(ep[n]===jour)continue;
+        try{const r=await m.generateContent(parts);if(n!==noms[0]&&!window.__aiNote){window.__aiNote=1;toast("Quota du jour atteint : j'utilise un modèle plus léger ⚡")}LS.set("aiModele",n);return r}
+        catch(e){last=e;const s=(String(e&&e.code||"")+" "+String(e&&e.message||e)).toLowerCase();
+          if(/429|quota|resource.?exhausted|rate.?limit|resource has been exhausted/.test(s)){ep[n]=jour;LS.set("aiEpuise",ep);continue}
+          if(/404|not.?found|no longer available|not supported/.test(s)&&/model/.test(s))continue;
+          throw e}}
+      throw last||new Error("quota")};
+    model={generateContent:p=>gen(p,"json")};textModel={generateContent:p=>gen(p,"text")};
     canImg=true;
   }catch(e){console.warn("IA indisponible",e);canImg=false}
   document.querySelectorAll(".scanBtn").forEach(b=>b.hidden=!canImg);$("bHisto").hidden=!canImg;
@@ -1000,9 +1015,9 @@ function parseJSON(t){
 function aiErr(e){const m=(String(e&&e.code||"")+" "+String(e&&e.message||e||"")).toLowerCase().replace(/-/g," ");
   if(m.includes("api not enabled")||m.includes("ailogic")||m.includes("get started"))return "Gemini n'est pas encore activé : Console Firebase → AI Logic → « Commencer » → Gemini Developer API (voir README). Attends ensuite 2-3 minutes.";
   if(m.includes("app check")||m.includes("appcheck")||m.includes("recaptcha"))return (recaptchaV3SiteKey||recaptchaEnterpriseSiteKey)?(recaptchaEnterpriseSiteKey?"App Check refuse l'appli : dans Firebase → App Check → Applications, enregistre l'appli avec « Fraud Defense (reCAPTCHA Enterprise) » et la clé "+recaptchaEnterpriseSiteKey.slice(0,10)+"…, puis attends 5 minutes.":"App Check refuse l'appli : vérifie la clé secrète reCAPTCHA dans Firebase → App Check, et que le domaine jasony28.github.io est autorisé."):"Scan bloqué par App Check : il manque la clé reCAPTCHA dans l'appli (voir README).";
-  if(m.includes("429")||m.includes("quota")||m.includes("resource_exhausted"))return "Limite gratuite atteinte pour le moment, réessaie plus tard.";
+  if(m.includes("429")||m.includes("quota")||m.includes("resource exhausted")||m.includes("resource_exhausted")||m.includes("resource has been exhausted"))return "Quota gratuit de Gemini épuisé pour aujourd'hui sur tous les modèles. Il revient vers 9 h (minuit heure de Californie). Pour ne plus être bloqué : Réglages → « Gemini : plus de quota ».";
   if(m.includes("api has not been used")||m.includes("not enabled")||m.includes("permission"))return "Firebase AI Logic n'est pas activé sur ton projet (voir README).";
-  if(m.includes("not found")&&m.includes("model"))return "Modèle Gemini introuvable : change geminiModel dans firebase-config.js.";
+  if(m.includes("not found")&&m.includes("model"))return "Aucun modèle Gemini disponible : il faut mettre à jour la liste dans firebase-config.js.";
   if(!navigator.onLine||m.includes("network")||m.includes("fetch"))return "Pas de connexion internet.";
   return "Lecture impossible, réessaie avec une photo plus nette.";}
 const PROMPT=`Tu lis la photo ou capture d'écran d'une fiche de paie d'un travailleur intérimaire (probablement en Belgique ou en France).
@@ -1274,7 +1289,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.cdetail){const m=S.missions.find(x=>x.id===b.dataset.cdetail);if(m&&m.contrat)openRaw(`<h3>Contrat <button class="del" data-close>×</button></h3>${contratHTML(m.contrat)}`);return}
   if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
   if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail)openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${detailHTML(p.detail)}`);return}
-  if(b.dataset.v){document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.v===b.dataset.v));
+  if(b.dataset.v){if(b.dataset.v==="set")renderSettings();document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.v===b.dataset.v));
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));
     $("fab").style.display=b.dataset.v==="set"?"none":"block";$("monthBar").style.display=b.dataset.v==="set"?"none":"";window.scrollTo(0,0);return}
   if(b.dataset.open){const o=b.dataset.open;if(o==="retrait")openSheet("epargne",null,null,{retrait:true});else openSheet(o,null,null,{amt:b.dataset.amt,target:b.dataset.target});return}

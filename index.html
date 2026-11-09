@@ -433,6 +433,18 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <button class="btn sec" id="bNotif">🔔 Activer les rappels</button>
       <p class="sub" id="notifState" style="margin-top:6px"></p>
     </div>
+    <h2>🤖 Gemini</h2>
+    <div class="card">
+      <p class="sub" id="aiState"></p>
+      <details style="margin-top:10px"><summary style="font-weight:700">Gemini : plus de quota (si tu es bloqué)</summary>
+        <div class="sub" style="margin-top:8px;line-height:1.55">
+        L'appli utilise l'offre <b>gratuite</b> de Gemini (quota par jour, remis à zéro vers 9 h). Quand un modèle est épuisé, elle passe toute seule sur un modèle « Lite » qui a beaucoup plus de quota.<br><br>
+        <b>Ton abonnement Gemini (Google AI Pro) ne donne pas de quota pour les applis</b>, mais il inclut <b>10 $ de crédits Google Cloud par mois</b>, utilisables pour Gemini :<br>
+        1. Va sur <b>developers.google.com/program</b> → « Mes avantages » → active les crédits Cloud (il faut un compte de facturation).<br>
+        2. Console Firebase → projet budget-interim → <b>Passer au forfait Blaze</b> avec ce compte de facturation.<br>
+        3. Dans Google Cloud → Facturation → <b>Budgets et alertes</b> : mets une alerte à 5 € pour être tranquille.<br>
+        Ensuite, plus de limite gênante : un scan coûte une fraction de centime, payée par tes crédits.</div></details>
+    </div>
     <h2>Sauvegarde</h2>
     <div class="card">
       <p class="sub" style="margin-bottom:10px">Tes données sont déjà synchronisées dans ton compte. Tu peux aussi garder une copie : <span id="lastBackup"></span></p>
@@ -448,7 +460,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 14</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 15</p>
     </div>
   </section>
 </main>
@@ -470,6 +482,6 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=14"></script>
+<script type="module" src="app.js?v=15"></script>
 </body>
 </html>

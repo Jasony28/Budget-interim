@@ -16,5 +16,7 @@ export const recaptchaV3SiteKey = "";
 // ou reCAPTCHA Enterprise
 export const recaptchaEnterpriseSiteKey = "6LeX-RYuAAAAAJFxD3d2GAmRK2ccNFsDRJFo1aLz";
 
-// 🤖 Modèle Gemini utilisé pour lire les fiches de paie
+// 🤖 Modèles Gemini, essayés dans l'ordre : si le quota gratuit du premier est épuisé
+// (ou s'il n'existe plus), l'appli passe automatiquement au suivant.
 export const geminiModel = "gemini-3.5-flash";
+export const geminiFallbacks = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
