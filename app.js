@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=19";
+import * as CFG from "./firebase-config.js?v=20";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=19;
+const APP_VERSION=20;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -42,7 +42,7 @@ const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
 const fdb=app?initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})}):null;
 let fsDoc=null, unsub=null, curUid=null, loaded=false;
-function setSync(t){$("sync").textContent=t}
+function setSync(t){$("sync").title=t;$("sync").setAttribute("aria-label",t);$("sync").classList.toggle("off",/hors|erreur|chargement|attente|…/i.test(t))}
 function compacter(){ // Firestore : 1 Mo max par document → on allège les vieux détails si besoin
   let json=JSON.stringify(S);if(json.length<850e3)return json;
   const items=[...S.paies,...S.depenses].filter(x=>x.detail).sort((a,b)=>a.date.localeCompare(b.date));
@@ -159,7 +159,12 @@ function avgVar(n=3){
 function moisPour(o){if(!o.echeance)return null;const d=new Date(o.echeance+"T12:00"),n=new Date();const m=Math.max(1,(d.getFullYear()-n.getFullYear())*12+d.getMonth()-n.getMonth());return Math.max(0,(+o.cible-(+o.actuel||0)))/m}
 
 /* ---------- rendu ---------- */
-const row=(edit,left,right)=>`<div class="row"><div class="l" data-edit="${edit}">${left}</div><div style="display:flex;align-items:center;gap:2px">${right}</div></div>`;
+const row=(edit,left,right,ic)=>`<div class="row"><div class="l" data-edit="${edit}">${ic?`<span class="ci${ic.c?" "+ic.c:""}">${ic.i||ic}</span>`:""}<div class="tx">${left}</div></div><div style="display:flex;align-items:center;gap:2px">${right}</div></div>`;
+const CAT_IC={courses:"🛒",transport:"🚆",carburant:"⛽",loisirs:"🎮",santé:"💊",vêtements:"👕",maison:"🏠",resto:"🍔",cadeaux:"🎁",autre:"📦",abonnements:"📱",animaux:"🐾",enfants:"🧸",assurance:"🛡️",impôts:"🏛️",épargne:"🐷",banque:"🏦",téléphone:"📱",internet:"🌐",loyer:"🏠",énergie:"⚡",sport:"🏋️",voyage:"✈️",beauté:"💇",cigarettes:"🚬",tabac:"🚬"};
+function catIc(c){c=String(c||"");const m=c.match(/^\p{Extended_Pictographic}\uFE0F?/u);if(m)return m[0];const k=c.toLowerCase().trim();return CAT_IC[k]||(Object.entries(CAT_IC).find(([n])=>k.includes(n))||[])[1]||"💳"}
+const vide=(ic,t)=>`<div class="empty"><span class="e-ic">${ic}</span>${t}</div>`;
+let alertsAll=false;
+function jourLabel(d){const t=today(),y=new Date();y.setDate(y.getDate()-1);if(d===t)return "Aujourd'hui";if(d===iso(y))return "Hier";return new Date(d+"T12:00").toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})}
 function render(){
   const k=mkey(cur), t=today(), isNow=k===mkey(new Date());
   $("mlabel").textContent=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
@@ -179,15 +184,15 @@ function render(){
   // budget par jour
   $("jourCard").hidden=!isNow||(M.recu+M.att===0&&M.dep===0);
   if(isNow){const n=new Date(),dim=new Date(n.getFullYear(),n.getMonth()+1,0).getDate(),left=dim-n.getDate()+1;
-    const pj=reste/left;$("parJour").textContent=eur(pj)+" / jour";$("parJour").className="v "+(pj<0?"out":pj<10?"pend":"pos");
-    $("jourSub").innerHTML=`${left} jour${left>1?"s":""}<br>restant${left>1?"s":""}`;$("moisBar").style.width=((n.getDate()-1)/dim*100)+"%"}
+    const pj=reste/left;$("parJour").textContent=eur(pj);$("jourCard").querySelector(".k").textContent=pj<0?"Il te manque":"Tu peux dépenser";$("parJour").className="v "+(pj<0?"out":pj<10?"pend":"pos");
+    $("jourSub").innerHTML=`par jour<br>${left} jour${left>1?"s":""} restant${left>1?"s":""}`;$("moisBar").style.width=((n.getDate()-1)/dim*100)+"%"}
 
   // alertes
   const A=[];
   const active=S.missions.filter(m=>(!m.debut||m.debut<=t)&&(!m.fin||m.fin>=t));
   if(!S.missions.length) A.push(["","Ajoute ta première mission","Onglet Paies → nouvelle mission, ou scanne directement une fiche de paie 📷."]);
   else if(!active.length) A.push(["bad","Pas de mission en cours",`Avec tes charges fixes de ${eur(fx)}/mois, ton épargne tient ${fx?(R.epargne/fx).toLocaleString("fr-BE",{maximumFractionDigits:1}):"∞"} mois.`]);
-  active.forEach(m=>{if(m.fin){const n=daysTo(m.fin);if(n<=14)A.push([n<=5?"bad":"","Fin de mission "+(n<=0?"aujourd'hui":"dans "+n+" j"),`${esc(m.client||m.agence)} se termine le ${fmtD(m.fin)}. Pense à relancer ton agence.`])}
+  active.forEach(m=>{if(m.fin){const n=daysTo(m.fin);if(n<=14)A.push([n<=5?"bad":"","Fin de mission "+(n<=0?"aujourd'hui":"dans "+n+" j"),`${esc(m.client||m.agence)} se termine le ${fmtD(m.fin).replace(/\.$/,"")}. Pense à relancer ton agence.`])}
     else A.push(["ok","Mission en cours",`${esc(m.client||m.agence)}${m.taux?" · "+eurT(m.taux)+"/h brut":""}`])});
   const att=S.paies.filter(p=>!p.recu&&!p.archive&&p.date<t);
   if(att.length)A.push(["",`${att.length} paie${att.length>1?"s":""} en retard`,`${eur(sum(att,p=>p.montant))} attendus depuis le ${fmtD(att.map(p=>p.date).sort()[0])}. Vérifie ton compte ou relance l'agence.`]);
@@ -201,7 +206,10 @@ function render(){
   const deja=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)&&x.montant>0),x=>x.montant);
   const aside=Math.max(0,M.recu*R.pct/100-deja);
   if(aside>=1&&R.pct>0) A.push(["ok",`Mets ${eur(aside)} de côté`,`${R.pct}% de tes paies reçues ce mois, pour tenir pendant les périodes sans mission.`,`<button class="btn sm" data-open="epargne" data-amt="${aside.toFixed(2)}" style="margin-top:10px">C'est fait</button>`]);
-  $("alerts").innerHTML=A.map(a=>`<div class="card alert ${a[0]}"><div style="flex:1"><div class="t">${a[1]}</div><p>${a[2]}</p>${a[3]||""}</div></div>`).join("");
+  const AI=t=>/mission en cours/i.test(t)?"✅":/pas de mission/i.test(t)?"⚠️":/fin de mission/i.test(t)?"⏳":/paie/i.test(t)?"💶":/facture/i.test(t)?"🧾":/budget/i.test(t)?"📊":/de côté/i.test(t)?"🐷":/mission/i.test(t)?"🏭":"📌";
+  A.sort((x,y)=>(y[0]==="bad")-(x[0]==="bad"));
+  const aH=x=>`<div class="card alert ${x[0]}"><span class="ai">${AI(x[1])}</span><div style="flex:1;min-width:0"><div class="t">${x[1]}</div><p>${x[2]}</p>${x[3]||""}</div></div>`;
+  $("alerts").innerHTML=A.slice(0,alertsAll?99:3).map(aH).join("")+(A.length>3&&!alertsAll?`<button type="button" class="more-alerts" data-moreal="1">Voir ${A.length-3} autre${A.length-3>1?"s":""} info${A.length-3>1?"s":""}</button>`:"");
 
   // coussin
   const cible=fx*R.mois;
@@ -243,11 +251,11 @@ function render(){
   // paies
   const pm=[...M.pAll].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
-    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${p.autre?"💰 ":""}${esc(m?(m.client||m.agence):(p.note||(p.autre?"Rentrée":"Paie")))}${p.autre?'<span class="pill">rentrée</span>':""}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
-    `<span class="amt ${p.archive?"":p.recu?"pos":"pend"}" ${p.archive?"":`data-toggle="${p.id}"`} style="cursor:pointer;${p.archive?"color:var(--mut)":""}">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`)}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:`<div class="empty">Aucune paie ce mois</div>`;
+    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||(p.autre?"Rentrée":"Paie")))}${p.autre?'<span class="pill">rentrée</span>':""}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
+    `<span class="amt ${p.archive?"":p.recu?"pos":"pend"}" ${p.archive?"":`data-toggle="${p.id}"`} style="cursor:pointer;${p.archive?"color:var(--mut)":""}">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`,{i:p.autre?"💰":p.archive?"📚":"💶",c:p.archive?"pay arch":"pay"})}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:vide("💶","Aucune paie ce mois.<br>Scanne ta fiche de paie ou ajoute-la à la main.");
 
   // fixes
-  $("fixes").innerHTML=S.fixes.length?S.fixes.map(f=>row("fixe:"+f.id,`<b>${esc(f.nom)}</b>${f.jour?`<small>le ${esc(f.jour)} du mois</small>`:""}`,`<span class="amt out">${eur2(f.montant)}</span><button class="del" data-del="fixes:${f.id}">×</button>`)).join("")+`<div class="row"><div class="l"><b>Total</b></div><span class="amt">${eur2(fx)}</span></div>`:`<div class="empty">Loyer, assurance, téléphone, abonnements…</div>`;
+  $("fixes").innerHTML=S.fixes.length?S.fixes.map(f=>row("fixe:"+f.id,`<b>${esc(f.nom)}</b>${f.jour?`<small>le ${esc(f.jour)} du mois</small>`:""}`,`<span class="amt out">${eur2(f.montant)}</span><button class="del" data-del="fixes:${f.id}">×</button>`,catIc(f.nom)==="💳"?"🔁":catIc(f.nom))).join("")+`<div class="row"><div class="l"><b>Total</b></div><span class="amt">${eur2(fx)}</span></div>`:vide("🔁","Loyer, assurance, téléphone, abonnements…<br>Ajoute ce qui tombe chaque mois.");
 
   // budgets
   const bl=Object.entries(S.budgets).filter(([,v])=>+v>0);
@@ -258,9 +266,9 @@ function render(){
   const q=($("search").value||"").trim().toLowerCase();
   const dl=q?S.depenses.filter(d=>((d.note||"")+" "+(d.cat||"")+" "+fmtN(d.montant)+" "+d.montant).toLowerCase().includes(q)):M.all;
   const dm=[...dl].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,q?100:500);
-  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${d.photo?"🖼️ ":d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe&&S.fixes.some(f=>f.id===d.fixe)?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
+  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map((d,i)=>(!q&&(i===0||dm[i-1].date!==d.date)?`<div class="day"><span>${jourLabel(d.date)}</span><span>−${eur2(sum(dm.filter(x=>x.date===d.date),x=>x.montant))}</span></div>`:"")+row("depense:"+d.id,`<b>${d.photo?"🖼️ ":d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe&&S.fixes.some(f=>f.id===d.fixe)?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE")+" · ":""}${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`,catIc(d.cat))).join(""):q?vide("🔍","Aucun résultat"):vide("🧾","Aucune dépense ce mois.<br>Touche <b>Ajouter</b> ou scanne un ticket."));
 
-  renderStats();renderOutils();renderExtras(M,k);renderPrevision();renderSettings();renderTrajets();renderDemarches();renderScore(M,k);renderSubs();renderDoublons();
+  renderStats();renderOutils();renderExtras(M,k);renderPrevision();renderSettings();renderTrajets();renderDemarches();renderScore(M,k);renderSubs();renderDoublons();try{renderAccStatus()}catch(e){console.warn(e)}
   // réglages
   if(document.activeElement?.closest?.("#fSet")==null){$("sEpargne").value=R.epargne;$("sPct").value=R.pct;$("sMois").value=R.mois;$("sRatio").value=R.ratio;$("sStatut").value=R.statut||"ouvrier";$("sDomicile").value=R.domicile||"";$("sConso").value=R.conso;$("sCarbu").value=R.carbu}
 }
@@ -1003,7 +1011,11 @@ function openSheet(type,ctx,item,opts={}){
     ${ed?`<label class="chk"><input type="checkbox" name="regle" ${it.regle?"checked":""}> Réglé</label>`:""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
    choix:`${head("Ajouter")}
-    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn scanBtn" data-mode="facture" ${canImg?"":"hidden"}>🧾 Scanner une facture / un ticket</button><button class="btn scanBtn" data-mode="contrat" ${canImg?"":"hidden"}>📑 Scanner un contrat</button><button class="btn sec" ${canImg?"":"hidden"} onclick="document.getElementById('bHisto').click()">📚 Anciennes fiches de paie</button><button class="btn" data-open="depense">💸 Une dépense</button><button class="btn sec" data-open="paie">💶 Une paie reçue</button><button class="btn sec" data-open="mission">🏭 Une mission</button><button class="btn sec" data-open="fixe">🔁 Une charge fixe</button><button class="btn sec" data-open="epargne">🛟 Mettre de côté</button><button class="btn sec" data-open="objectif">🎯 Un objectif</button><button class="btn sec" data-open="pointage">⏱️ Pointer des heures</button><button class="btn sec" data-open="cheques">🍽️ Chèques-repas</button><button class="btn sec" data-open="dette">🤝 Dette / prêt</button></div>`
+    <div class="pick-h">À la main</div>
+    <div class="pick-grid"><button class="main" data-open="depense"><span>💸</span>Une dépense<small>courses, resto, essence…</small></button><button data-open="paie"><span>💶</span>Une rentrée<small>paie, remboursement…</small></button></div>
+    ${canImg?`<div class="pick-h">Scanner avec l'IA</div><div class="pick-grid"><button class="scanBtn" data-mode="facture"><span>🧾</span>Ticket / facture</button><button class="scanBtn"><span>📷</span>Fiche de paie</button><button class="scanBtn" data-mode="contrat"><span>📑</span>Contrat</button><button type="button" onclick="document.getElementById('bHisto').click()"><span>📚</span>Anciennes fiches</button></div>`:""}
+    <div class="pick-h">Autre</div>
+    <div class="pick-grid"><button data-open="epargne"><span>🐷</span>Mettre de côté</button><button data-open="fixe"><span>🔁</span>Charge fixe</button><button data-open="mission"><span>🏭</span>Mission</button><button data-open="objectif"><span>🎯</span>Objectif</button><button data-open="pointage"><span>⏱️</span>Pointer des heures</button><button data-open="cheques"><span>🍽️</span>Chèques-repas</button><button data-open="dette"><span>🤝</span>Dette / prêt</button><button type="button" data-go="releve"><span>🏦</span>Relevé bancaire</button></div>`,
   };
   $("sheet").innerHTML=H[type];$("sheetBg").classList.add("open");
   if(type==="paie"){
@@ -1346,6 +1358,9 @@ document.addEventListener("click",e=>{
   if(b.dataset.cdetail){const m=S.missions.find(x=>x.id===b.dataset.cdetail);if(m&&m.contrat)openRaw(`<h3>Contrat <button class="del" data-close>×</button></h3>${contratHTML(m.contrat)}`);return}
   if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
   if(b.dataset.detail){const p=S.paies.find(x=>x.id===b.dataset.detail);if(p&&p.detail)openRaw(`<h3>Détail de la paie <button class="del" data-close>×</button></h3>${detailHTML(p.detail)}`);return}
+  if(b.dataset.moreal){alertsAll=true;render();return}
+  if(b.dataset.go==="releve"){closeSheet();$("bReleve").click();return}
+  if(b.dataset.acc){const d=$("acc-"+b.dataset.acc);if(d){d.open=true;setTimeout(()=>d.scrollIntoView({behavior:"smooth",block:"start"}),30)}return}
   if(b.dataset.v){if(b.dataset.v==="set")renderSettings();document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.v===b.dataset.v));
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));
     $("fab").style.display=b.dataset.v==="set"?"none":"block";$("monthBar").style.display=b.dataset.v==="set"?"none":"";window.scrollTo(0,0);return}
@@ -1358,6 +1373,17 @@ document.addEventListener("click",e=>{
   if(b.dataset.ptoggle){const p=S.depenses.find(x=>x.id===b.dataset.ptoggle);if(p){p.paye=p.paye===false;if(p.paye)p.echeance="";save();toast(p.paye?"Marquée payée ✓":"Marquée à payer")}return}
   if(b.dataset.toggle){const p=S.paies.find(x=>x.id===b.dataset.toggle);if(p){p.recu=!p.recu;save()}return}
 });
+document.querySelectorAll("details.acc").forEach(d=>{let st={};try{st=JSON.parse(localStorage.getItem("accOpen")||"{}")}catch(e){}if(d.id in st)d.open=!!st[d.id];
+  d.addEventListener("toggle",()=>{try{const s=JSON.parse(localStorage.getItem("accOpen")||"{}");s[d.id]=d.open;localStorage.setItem("accOpen",JSON.stringify(s))}catch(e){}})});
+function renderAccStatus(){const t=today(),k=t.slice(0,7),set=(id,v)=>{const e=$("st-"+id);if(e)e.textContent=v};
+  set("ia","Analyse ton mois, réponds à tes questions");
+  const hp=sum(S.pointage.filter(x=>(x.date||"").startsWith(k)),x=>x.heures);set("cal",hp?fmtN(hp)+" h pointées ce mois":"Note tes heures jour par jour");
+  set("trajet",S.reglages.domicile?"Coût et km de tes trajets":"Ajoute tes adresses pour calculer le coût");
+  try{const dm=demarchesProches().filter(x=>!x.done);set("admin",dm.length?dm.length+" à venir · prochaine le "+fmtD(dm[0].date):"Rien à faire pour l'instant 👌")}catch(e){set("admin","")}
+  set("prime","Estimation et conditions (65 j / 494 h)");set("pecule","Estimation payée en mai-juin");
+  set("cr",(S.cr||[]).length?"Suivi de ton solde":"Suis ton solde de chèques-repas");
+  const dt=(S.dettes||[]).filter(x=>!x.regle);set("dettes",dt.length?dt.length+" en cours":"Qui te doit quoi, à qui tu dois");
+  const dd=(S.defi||[]).length;set("defi",dd?dd+" / 52 semaines":"Épargne un peu plus chaque semaine")}
 $("fab").onclick=()=>{const v=document.querySelector(".view.on").id;openSheet(v==="v-rev"?"paie":v==="v-dep"?"depense":"choix")};
 let sTimer;$("search").oninput=()=>{clearTimeout(sTimer);sTimer=setTimeout(render,150)};
 ["simH","simT","simW"].forEach(id=>$(id).oninput=()=>{if(id==="simT")$("simT").dataset.touched=1;renderStats()});

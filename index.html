@@ -180,6 +180,141 @@ summary{cursor:pointer}
 body.signed-out>*:not(#login):not(.toast):not(#splash){display:none!important}
 body:not(.signed-out) #login{display:none}
 textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:10px;font-family:monospace;font-size:12px}
+
+/* ================= DESIGN V2 ================= */
+:root{--bg:#08080a;--card:#131316;--card2:#1c1c21;--line:rgba(255,255,255,.07);--txt:#f5f5f7;--mut:#8e8e99;--r:20px;--ease:cubic-bezier(.2,.8,.2,1)}
+body{padding-bottom:calc(92px + env(safe-area-inset-bottom));font-feature-settings:"tnum" 1}
+header{position:sticky;top:0;z-index:6;padding:calc(12px + env(safe-area-inset-top)) 16px 10px;background:linear-gradient(var(--bg) 70%,rgba(8,8,10,0));}
+header h1{font-size:19px}
+.hdr-r{display:flex;align-items:center;gap:6px}
+.ib{display:inline-flex;align-items:center;justify-content:center;background:var(--card);border:1px solid var(--line);color:var(--txt);width:38px;height:38px;border-radius:12px;transition:transform .15s var(--ease),background .2s}
+.ib:active{transform:scale(.92);background:var(--card2)}
+.ib svg{width:18px;height:18px}
+.sync{display:inline-flex;align-items:center;justify-content:center;width:20px;height:38px;font-size:0}
+.sync::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--pos);box-shadow:0 0 8px var(--pos)}
+.sync.off::before{background:var(--warn);box-shadow:none}
+main{padding:0 16px 70px}
+.month{background:transparent;padding:0;margin:2px 0 14px;gap:10px}
+.month b{font-size:17px;font-weight:800;flex:1;text-align:center}
+.month .ib{width:40px;height:40px;font-size:22px}
+.card,.obj{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.grid{gap:12px}.grid .card{margin-bottom:0}.grid{margin-bottom:12px}
+.k{font-size:12px;letter-spacing:.01em}
+.v{font-size:24px}
+h2{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);margin:26px 4px 10px}
+h2 .btn{text-transform:none;letter-spacing:0}
+/* hero */
+.big{position:relative;overflow:hidden;border:0;padding:20px 18px 18px;background:radial-gradient(120% 140% at 100% 0%,#ff4458 0%,#c5122a 38%,#5a0812 100%);box-shadow:0 18px 40px -12px rgba(239,35,60,.55)}
+.big::after{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.08)}
+.big .k{color:rgba(255,255,255,.8);font-size:13px}
+.big .v{font-size:40px;letter-spacing:-.035em;margin-top:6px;color:#fff}
+.big .sub{color:rgba(255,255,255,.82);font-size:13px}
+.big.neg{background:radial-gradient(120% 140% at 100% 0%,#2a0a0e 0%,#140608 60%,#0e0506 100%);border:1px solid rgba(239,35,60,.6);box-shadow:none}
+.big.neg .v{color:#ff6b78}.big.neg::after{opacity:.25}
+.hero-day{position:relative;z-index:1;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.18);display:flex;justify-content:space-between;align-items:flex-end;gap:10px}
+.hero-day .k{font-size:12px}
+.hero-day .v{font-size:20px;margin-top:2px;color:#fff!important}
+.hero-day .sub{text-align:right}
+.big .bar{background:rgba(255,255,255,.18);height:6px}.big .bar i{background:#fff}
+.big.neg .hero-day{border-color:rgba(255,255,255,.08)}.big.neg .bar i{background:var(--acc)}
+.mini{display:flex;flex-direction:column;gap:2px}
+.mini .ico{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+.mini .ico svg{width:16px;height:16px}
+.ico.in{background:rgba(74,222,128,.12);color:var(--pos)}.ico.outc{background:rgba(255,107,120,.12);color:var(--out)}
+/* actions rapides */
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:2px 0 16px}
+.quick button{background:var(--card);border:1px solid var(--line);color:var(--txt);border-radius:18px;padding:12px 4px 10px;font-family:inherit;font-size:11.5px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;transition:transform .15s var(--ease),background .2s}
+.quick button:active{transform:scale(.94);background:var(--card2)}
+.quick .qi{width:40px;height:40px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:19px;background:rgba(239,35,60,.12)}
+.quick button:first-child .qi{background:var(--acc);box-shadow:0 6px 16px -4px rgba(239,35,60,.6)}
+/* alertes */
+.alert{border:1px solid var(--line);border-left:0;position:relative;padding:14px 14px 14px 18px;gap:12px}
+.alert::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:0 4px 4px 0;background:var(--warn)}
+.alert.ok::before{background:var(--acc)}.alert.bad::before{background:var(--bad)}
+.alert .ai{font-size:20px;line-height:1;flex:none;margin-top:1px}
+.alert .t{font-size:14.5px}.alert p{font-size:13px;line-height:1.45}
+.alert.bad{background:linear-gradient(90deg,rgba(255,77,94,.08),var(--card) 60%)}
+.more-alerts{display:block;width:100%;background:none;border:1px dashed var(--line);color:var(--mut);border-radius:14px;padding:10px;font-family:inherit;font-weight:700;font-size:13px;margin-bottom:12px;cursor:pointer}
+/* lignes */
+.row{padding:12px 0;gap:12px}
+.row .l{flex:1;display:flex;align-items:center;gap:12px}
+.row .l>.tx{min-width:0;flex:1}
+.row .l .tx b{display:block;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .l .tx small{display:block;margin-top:1px}
+.ci{width:40px;height:40px;flex:none;border-radius:13px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:18px}
+.ci.pay{background:rgba(74,222,128,.12)}.ci.arch{opacity:.5}
+.day{font-size:12px;font-weight:800;color:var(--mut);padding:14px 0 2px;display:flex;justify-content:space-between;text-transform:capitalize}
+.day:first-child{padding-top:0}
+.day span:last-child{text-transform:none;font-weight:700}
+.amt{font-size:15px}
+.del{opacity:.55;font-size:20px}
+.pill{font-size:10.5px;padding:2px 7px;vertical-align:1px}
+.empty{padding:22px 10px;line-height:1.5}
+.empty .e-ic{display:block;font-size:30px;margin-bottom:6px}
+/* boutons */
+.btn{border-radius:14px;padding:14px 16px;font-size:15px;transition:transform .15s var(--ease),filter .2s;box-shadow:0 6px 18px -8px rgba(239,35,60,.7)}
+.btn:active{transform:scale(.97);filter:brightness(1.1)}
+.btn.sec{box-shadow:none;border:1px solid var(--line)}
+.btn.sm{border-radius:11px;padding:9px 13px}
+input,select,textarea{border-radius:14px;border-color:var(--line);transition:border-color .2s}
+input:focus,select:focus,textarea:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px rgba(239,35,60,.18)}
+label{font-size:12.5px}
+.chk{padding:4px 0;line-height:1.35}
+/* navigation */
+nav{padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:rgba(12,12,14,.88);backdrop-filter:saturate(1.4) blur(16px);-webkit-backdrop-filter:saturate(1.4) blur(16px)}
+nav button{font-size:10.5px;padding:7px 0 5px;gap:4px;justify-items:center;transition:color .2s}
+nav button .ic{display:flex;align-items:center;justify-content:center;width:46px;height:28px;border-radius:99px;transition:background .25s var(--ease)}
+nav button .ic svg{width:21px;height:21px}
+nav button.on{background:none}
+nav button.on .ic{background:rgba(239,35,60,.16)}
+.fab{width:58px;height:58px;border-radius:20px;bottom:calc(88px + env(safe-area-inset-bottom));display:flex;align-items:center;justify-content:center;transition:transform .2s var(--ease)}
+.fab svg{width:26px;height:26px}
+.fab:active{transform:scale(.9) rotate(90deg)}
+/* feuilles */
+.sheet-bg{display:flex;visibility:hidden;opacity:0;transition:opacity .25s,visibility .25s;backdrop-filter:blur(3px)}
+.sheet-bg.open{visibility:visible;opacity:1}
+.sheet{border:1px solid var(--line);border-bottom:0;border-radius:26px 26px 0 0;padding:10px 18px calc(22px + env(safe-area-inset-bottom));transform:translateY(100%);transition:transform .32s var(--ease)}
+.sheet-bg.open .sheet{transform:none}
+.sheet::before{content:"";display:block;width:40px;height:5px;border-radius:99px;background:#3a3a42;margin:0 auto 14px}
+.sheet h3{font-size:19px;font-weight:800;margin-bottom:16px}
+.sheet h3 .del{width:34px;height:34px;border-radius:50%;background:var(--card2);opacity:1;display:flex;align-items:center;justify-content:center;padding:0}
+.pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pick-grid button{background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:18px;padding:16px 12px;font-family:inherit;font-weight:700;font-size:14px;text-align:left;display:flex;flex-direction:column;gap:8px;cursor:pointer;transition:transform .15s var(--ease)}
+.pick-grid button:active{transform:scale(.96)}
+.pick-grid button span{font-size:24px}
+.pick-grid button small{font-weight:600;color:var(--mut);font-size:12px}
+.pick-grid button.main{background:linear-gradient(135deg,#c5122a,#ef233c);border:0}
+.pick-grid button.main small{color:rgba(255,255,255,.8)}
+.pick-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:16px 2px 8px}
+.pick-h:first-of-type{margin-top:0}
+.seg{border-radius:14px}.seg button{border-radius:10px}
+/* outils en accordéon */
+.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0 6px}
+.tools button{background:var(--card);border:1px solid var(--line);color:var(--txt);border-radius:16px;padding:12px 4px;font-family:inherit;font-size:11.5px;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;transition:transform .15s var(--ease)}
+.tools button:active{transform:scale(.95)}
+.tools button span{font-size:22px}
+details.acc{background:var(--card);border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;overflow:hidden;scroll-margin-top:80px}
+details.acc>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:15px 16px;font-weight:800;font-size:15px}
+details.acc>summary::-webkit-details-marker{display:none}
+details.acc>summary .si{width:36px;height:36px;border-radius:12px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:18px;flex:none}
+details.acc>summary .st{display:block;font-size:12px;font-weight:600;color:var(--mut);margin-top:1px}
+details.acc>summary::after{content:"";margin-left:auto;width:9px;height:9px;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(45deg);transition:transform .25s var(--ease);flex:none;margin-right:4px}
+details.acc[open]>summary::after{transform:rotate(-135deg)}
+details.acc>.card{border:0;border-radius:0;margin:0;padding:2px 16px 16px;background:transparent}
+details.acc[open]>summary{border-bottom:1px solid var(--line);margin-bottom:12px}
+.acc-act{display:flex;justify-content:flex-end;margin:-4px 0 10px}
+/* divers */
+.toast{border-radius:14px;padding:12px 18px;box-shadow:0 10px 30px rgba(0,0,0,.5);transform:translate(-50%,10px);transition:opacity .25s,transform .25s var(--ease)}
+.toast.on{transform:translate(-50%,0)}
+.chips button{border-radius:99px;transition:transform .15s}
+.chips button:active{transform:scale(.95)}
+.view.on{animation:vIn .28s var(--ease)}
+@keyframes vIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.search-w{position:relative;margin-bottom:12px}
+.search-w svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:17px;height:17px;color:var(--mut)}
+.search-w input{padding-left:42px}
+.seclink{display:flex;justify-content:space-between;align-items:center}
+@media (prefers-reduced-motion:reduce){.view.on,.sheet,.sheet-bg{animation:none;transition:none}}
 </style>
 </head>
 <body class="signed-out">
@@ -217,7 +352,7 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <div id="updBanner" hidden><span>✨ Nouvelle version disponible</span><button class="btn sm updBtn" style="background:#fff;color:var(--acc)">Mettre à jour</button></div>
 <header>
   <h1>Budget <span>Intérim</span></h1>
-  <div style="display:flex;align-items:center;gap:8px"><div class="sync" id="sync">Chargement…</div><button class="ib" id="bDiscret" title="Masquer les montants" aria-label="Mode discret" style="width:34px;height:34px;font-size:15px">👁</button><button class="ib updBtn" title="Mettre à jour l'appli" aria-label="Mettre à jour" style="width:34px;height:34px;font-size:16px">↻</button><button class="ib" data-v="set" title="Réglages" aria-label="Réglages" style="width:34px;height:34px;font-size:16px">⚙</button></div>
+  <div class="hdr-r"><div class="sync off" id="sync" title="Chargement…"></div><button class="ib" id="bDiscret" title="Masquer les montants" aria-label="Mode discret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ib updBtn" title="Mettre à jour l'appli" aria-label="Mettre à jour"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg></button><button class="ib" data-v="set" title="Réglages" aria-label="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></div>
 </header>
 
 <main>
@@ -230,25 +365,32 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 
   <!-- ACCUEIL -->
   <section class="view on" id="v-home">
-    <div class="grid">
-      <div class="card big" id="resteCard">
-        <div class="k">Reste à vivre ce mois</div>
-        <div class="v" id="reste">0 €</div>
-        <div class="sub" id="resteSub"></div>
+    <div class="card big" id="resteCard" style="margin-bottom:12px">
+      <div class="k">Reste à vivre ce mois</div>
+      <div class="v" id="reste">0 €</div>
+      <div class="sub" id="resteSub"></div>
+      <div id="jourCard" class="hero-day" hidden>
+        <div style="flex:1"><div class="k">Tu peux dépenser</div><div class="v" id="parJour">—</div><div class="bar"><i id="moisBar" style="width:0"></i></div></div>
+        <div class="sub" id="jourSub"></div>
       </div>
-      <div class="card"><div class="k">Paies reçues</div><div class="v pos" id="recu">0 €</div><div class="sub" id="attendu"></div></div>
-      <div class="card"><div class="k">Dépenses</div><div class="v out" id="dep">0 €</div><div class="sub" id="depSub"></div></div>
     </div>
-
-    <div class="card" id="jourCard" hidden>
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px">
-        <div><div class="k">Budget par jour jusqu'à la fin du mois</div><div class="v" id="parJour">—</div></div>
-        <div class="sub" id="jourSub" style="text-align:right"></div>
-      </div>
-      <div class="bar"><i id="moisBar" style="width:0"></i></div>
+    <div class="grid">
+      <div class="card mini"><div class="ico in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></div><div class="k">Reçu</div><div class="v pos" id="recu">0 €</div><div class="sub" id="attendu"></div></div>
+      <div class="card mini"><div class="ico outc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div><div class="k">Dépensé</div><div class="v out" id="dep">0 €</div><div class="sub" id="depSub"></div></div>
+    </div>
+    <div class="quick">
+      <button type="button" data-open="depense"><span class="qi">💸</span>Dépense</button>
+      <button type="button" class="scanBtn" data-mode="facture" hidden><span class="qi">🧾</span>Ticket</button>
+      <button type="button" class="scanBtn" data-mode="paie" hidden><span class="qi">📷</span>Fiche de paie</button>
+      <button type="button" data-go="releve"><span class="qi">🏦</span>Relevé</button>
     </div>
 
     <div id="alerts"></div>
+
+    <div class="card" id="weekCard" hidden>
+      <div class="k">📅 Ta semaine</div>
+      <div id="weekBody"></div>
+    </div>
 
     <div class="card" id="scoreCard">
       <div style="display:flex;gap:14px;align-items:center">
@@ -257,22 +399,19 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       </div>
     </div>
 
-    <div class="card" id="weekCard" hidden>
-      <div class="k">📅 Ta semaine</div>
-      <div id="weekBody"></div>
-    </div>
-
+    <h2>Ton épargne</h2>
     <div class="card">
-      <div class="k">Coussin de sécurité</div>
+      <div class="k">🛟 Coussin de sécurité</div>
       <div class="v" id="coussin">—</div>
       <div class="sub" id="coussinSub"></div>
       <div class="bar"><i id="coussinBar" style="width:0"></i></div>
       <div class="two" style="margin-top:12px"><button class="btn sm" data-open="epargne">+ Épargner</button><button class="btn sec sm" data-open="retrait">− Retirer</button></div>
     </div>
 
-    <h2 style="display:flex;justify-content:space-between;align-items:center">Mes objectifs <button class="btn sec sm" data-open="objectif">+ Objectif</button></h2>
+    <h2 class="seclink">Mes objectifs <button class="btn sec sm" data-open="objectif">+ Objectif</button></h2>
     <div id="objectifs"></div>
 
+    <h2>Tendances</h2>
     <div class="card">
       <div class="k">Revenus vs dépenses (6 mois)</div>
       <div class="chart" id="chart"></div>
@@ -288,72 +427,74 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 
   <!-- PAIES & MISSIONS -->
   <section class="view" id="v-rev">
-    <h2>Missions</h2>
-    <div class="card" id="missions"></div>
-    <div class="two"><button class="btn scanBtn" data-mode="contrat" hidden>📑 Scanner un contrat</button><button class="btn sec" data-open="mission">+ Nouvelle mission</button></div>
+    <div class="quick" style="grid-template-columns:repeat(3,1fr);margin-top:2px">
+      <button type="button" class="scanBtn" hidden><span class="qi">📷</span>Scanner une fiche</button>
+      <button type="button" data-open="paie"><span class="qi">✍️</span>Paie à la main</button>
+      <button type="button" id="bHisto" hidden><span class="qi">📚</span>Anciennes fiches</button>
+    </div>
     <h2>Paies du mois</h2>
-    <div class="two" style="margin-bottom:10px"><button class="btn scanBtn" hidden>📷 Scanner une fiche de paie</button><button class="btn sec" id="bHisto" hidden>📚 Anciennes fiches</button></div>
     <div id="dupBox"></div>
     <div class="card" id="paies"></div>
+    <h2 class="seclink">Missions <button class="btn sec sm" data-open="mission">+ Mission</button></h2>
+    <div class="card" id="missions"></div>
+    <button class="btn sec scanBtn" data-mode="contrat" hidden>📑 Scanner un contrat</button>
   </section>
 
   <!-- DEPENSES -->
   <section class="view" id="v-dep">
-    <h2>Charges fixes (chaque mois)</h2>
-    <div class="card" id="fixes"></div>
-    <button class="btn sec" data-open="fixe">+ Charge fixe</button>
-    <div id="subsBox"></div>
-    <h2 style="display:flex;justify-content:space-between;align-items:center">Budgets du mois <button class="btn sec sm" data-open="budgets">Modifier</button></h2>
-    <div class="card" id="budgets"></div>
+    <div class="quick" style="grid-template-columns:repeat(3,1fr);margin-top:2px">
+      <button type="button" data-open="depense"><span class="qi">💸</span>Ajouter</button>
+      <button type="button" class="scanBtn" data-mode="facture" hidden><span class="qi">🧾</span>Scanner un ticket</button>
+      <button type="button" data-go="releve"><span class="qi">🏦</span>Relevé bancaire</button>
+    </div>
+    <div class="search-w"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="search" type="search" placeholder="Rechercher une dépense, une catégorie…"></div>
     <h2>Dépenses du mois</h2>
-    <button class="btn scanBtn" data-mode="facture" hidden style="margin-bottom:10px">🧾 Scanner une facture / un ticket</button>
-    <input id="search" type="search" placeholder="🔍 Rechercher une dépense, une catégorie…" style="margin-bottom:10px">
     <div class="card" id="depenses"></div>
+    <h2 class="seclink">Budgets du mois <button class="btn sec sm" data-open="budgets">Modifier</button></h2>
+    <div class="card" id="budgets"></div>
+    <h2 class="seclink">Charges fixes <button class="btn sec sm" data-open="fixe">+ Ajouter</button></h2>
+    <div class="card" id="fixes"></div>
+    <div id="subsBox"></div>
   </section>
 
   <!-- OUTILS -->
   <section class="view" id="v-outils">
-    <h2>🤖 Assistant budget</h2>
-    <div class="card">
-      <button class="btn" id="bConseil">✨ Analyse mon mois</button>
+    <div class="tools">
+      <button type="button" id="bReleve"><span>🏦</span>Relevé bancaire</button>
+      <button type="button" id="bMulti"><span>🧾</span>Plusieurs tickets</button>
+      <button type="button" data-acc="ia"><span>🤖</span>Assistant</button>
+      <button type="button" data-acc="cal"><span>🗓️</span>Pointage</button>
+      <button type="button" data-acc="trajet"><span>🚗</span>Trajets</button>
+      <button type="button" data-acc="admin"><span>📋</span>Démarches</button>
+    </div>
+    <h2>Mes outils</h2>
+    <details class="acc" id="acc-ia" open><summary><span class="si">🤖</span><span>Assistant budget<span class="st" id="st-ia"></span></span></summary>
+      <div class="card"><button class="btn" id="bConseil">✨ Analyse mon mois</button>
       <div id="conseilOut" class="ai-out" hidden></div>
       <div class="k" style="margin-top:14px">Pose une question sur ton argent</div>
       <div id="chatLog"></div>
       <form id="fChat" style="display:flex;gap:8px;margin-top:8px"><input id="chatIn" placeholder="ex. Combien en resto depuis septembre ?" autocomplete="off" style="flex:1"><button class="btn sm" style="width:auto">➤</button></form>
-      <div class="chips" style="margin-top:8px" id="chatSugg"></div>
-    </div>
-    <div class="two">
-      <button class="btn sec" id="bMulti">🧾 Plusieurs tickets</button>
-      <button class="btn sec" id="bReleve">🏦 Relevé bancaire</button>
-    </div>
-
-    <h2>🗓️ Calendrier & pointage</h2>
-    <div class="card">
-      <div id="calendar"></div>
+      <div class="chips" style="margin-top:8px" id="chatSugg"></div></div></details>
+    <details class="acc" id="acc-cal"><summary><span class="si">🗓️</span><span>Calendrier & pointage<span class="st" id="st-cal"></span></span></summary>
+      <div class="card"><div id="calendar"></div>
       <div class="sub" id="calSub" style="margin-top:8px"></div>
-      <button class="btn sec sm" data-open="pointage" style="margin-top:10px">+ Pointer des heures</button>
-    </div>
-
-    <h2>🚗 Trajets</h2>
-    <div class="card" id="trajetCard"></div>
-
-    <h2>📋 Démarches à ne pas oublier</h2>
-    <div class="card" id="adminCard"></div>
-
-    <h2>🎁 Prime de fin d'année</h2>
-    <div class="card" id="primeCard"></div>
-
-    <h2>🏖️ Pécule de vacances</h2>
-    <div class="card" id="peculeCard"></div>
-
-    <h2 style="display:flex;justify-content:space-between;align-items:center">🍽️ Chèques-repas <button class="btn sec sm" data-open="cheques">+ Ajouter</button></h2>
-    <div class="card" id="crCard"></div>
-
-    <h2 style="display:flex;justify-content:space-between;align-items:center">🤝 Dettes & prêts <button class="btn sec sm" data-open="dette">+ Ajouter</button></h2>
-    <div class="card" id="dettes"></div>
-
-    <h2>💪 Défi 52 semaines</h2>
-    <div class="card" id="defi"></div>
+      <button class="btn sec sm" data-open="pointage" style="margin-top:10px">+ Pointer des heures</button></div></details>
+    <details class="acc" id="acc-trajet"><summary><span class="si">🚗</span><span>Trajets<span class="st" id="st-trajet"></span></span></summary>
+      <div class="card"><div id="trajetCard"></div></div></details>
+    <details class="acc" id="acc-admin"><summary><span class="si">📋</span><span>Démarches à ne pas oublier<span class="st" id="st-admin"></span></span></summary>
+      <div class="card"><div id="adminCard"></div></div></details>
+    <h2>Primes & avantages</h2>
+    <details class="acc" id="acc-prime"><summary><span class="si">🎁</span><span>Prime de fin d'année<span class="st" id="st-prime"></span></span></summary>
+      <div class="card"><div id="primeCard"></div></div></details>
+    <details class="acc" id="acc-pecule"><summary><span class="si">🏖️</span><span>Pécule de vacances<span class="st" id="st-pecule"></span></span></summary>
+      <div class="card"><div id="peculeCard"></div></div></details>
+    <details class="acc" id="acc-cr"><summary><span class="si">🍽️</span><span>Chèques-repas<span class="st" id="st-cr"></span></span></summary>
+      <div class="card"><div class="acc-act"><button class="btn sec sm" data-open="cheques">+ Ajouter</button></div><div id="crCard"></div></div></details>
+    <h2>Argent & motivation</h2>
+    <details class="acc" id="acc-dettes"><summary><span class="si">🤝</span><span>Dettes & prêts<span class="st" id="st-dettes"></span></span></summary>
+      <div class="card"><div class="acc-act"><button class="btn sec sm" data-open="dette">+ Ajouter</button></div><div id="dettes"></div></div></details>
+    <details class="acc" id="acc-defi"><summary><span class="si">💪</span><span>Défi 52 semaines<span class="st" id="st-defi"></span></span></summary>
+      <div class="card"><div id="defi"></div></div></details>
   </section>
 
   <!-- STATS -->
@@ -462,19 +603,19 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 19</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 20</p>
     </div>
   </section>
 </main>
 
-<button class="fab" id="fab" aria-label="Ajouter">+</button>
+<button class="fab" id="fab" aria-label="Ajouter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 
 <nav>
-  <button class="on" data-v="home"><span class="ic">◉</span>Accueil</button>
-  <button data-v="rev"><span class="ic">€</span>Paies</button>
-  <button data-v="dep"><span class="ic">↓</span>Dépenses</button>
-  <button data-v="outils"><span class="ic">✦</span>Outils</button>
-  <button data-v="stats"><span class="ic">▤</span>Stats</button>
+  <button class="on" data-v="home"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg></span>Accueil</button>
+  <button data-v="rev"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="13" rx="3"/><path d="M2.5 10h19M7 15h3"/></svg></span>Paies</button>
+  <button data-v="dep"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h3"/></svg></span>Dépenses</button>
+  <button data-v="outils"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span>Outils</button>
+  <button data-v="stats"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>Stats</button>
 </nav>
 
 <div class="sheet-bg" id="sheetBg">
@@ -484,6 +625,6 @@ textarea{width:100%;height:120px;background:var(--card2);border:1px solid var(--
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=19"></script>
+<script type="module" src="app.js?v=20"></script>
 </body>
 </html>
