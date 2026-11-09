@@ -3,9 +3,9 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=13";
+import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=14";
 
-const APP_VERSION=13;
+const APP_VERSION=14;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -127,13 +127,14 @@ if("serviceWorker" in navigator){const had=!!navigator.serviceWorker.controller;
 /* ---------- calculs ---------- */
 const fixesTotal=()=>S.fixes.reduce((a,f)=>a+(+f.montant||0),0);
 function monthData(k){
-  const p=S.paies.filter(x=>(x.date||"").startsWith(k));
+  const pAll=S.paies.filter(x=>(x.date||"").startsWith(k)),p=pAll.filter(x=>!x.archive); // fiche « historique » : compte pour les droits et stats, pas comme argent disponible
   const recu=p.filter(x=>x.recu).reduce((a,x)=>a+(+x.montant||0),0);
   const att=p.filter(x=>!x.recu).reduce((a,x)=>a+(+x.montant||0),0);
+  const arch=pAll.filter(x=>x.archive).reduce((a,x)=>a+(+x.montant||0),0);
   const all=S.depenses.filter(x=>(x.date||"").startsWith(k));
   const d=all.filter(x=>!(x.fixe&&S.fixes.some(f=>f.id===x.fixe))); // une facture liée à une charge fixe (toujours existante) est déjà comptée dans les fixes
   const var_=d.reduce((a,x)=>a+(+x.montant||0),0);
-  return{p,recu,att,d,all,var_,fix:fixesTotal(),dep:var_+fixesTotal()};
+  return{p,pAll,arch,recu,att,d,all,var_,fix:fixesTotal(),dep:var_+fixesTotal()};
 }
 function missionPaid(m){return S.paies.filter(p=>p.mission===m.id&&p.recu).reduce((a,p)=>a+(+p.montant||0),0)}
 function daysTo(s){return Math.ceil((new Date(s+"T23:59")-new Date())/864e5)}
@@ -181,7 +182,7 @@ function render(){
   else if(!active.length) A.push(["bad","Pas de mission en cours",`Avec tes charges fixes de ${eur(fx)}/mois, ton épargne tient ${fx?(R.epargne/fx).toLocaleString("fr-BE",{maximumFractionDigits:1}):"∞"} mois.`]);
   active.forEach(m=>{if(m.fin){const n=daysTo(m.fin);if(n<=14)A.push([n<=5?"bad":"","Fin de mission "+(n<=0?"aujourd'hui":"dans "+n+" j"),`${esc(m.client||m.agence)} se termine le ${fmtD(m.fin)}. Pense à relancer ton agence.`])}
     else A.push(["ok","Mission en cours",`${esc(m.client||m.agence)}${m.taux?" · "+eurT(m.taux)+"/h brut":""}`])});
-  const att=S.paies.filter(p=>!p.recu&&p.date<t);
+  const att=S.paies.filter(p=>!p.recu&&!p.archive&&p.date<t);
   if(att.length)A.push(["",`${att.length} paie${att.length>1?"s":""} en retard`,`${eur(sum(att,p=>p.montant))} attendus depuis le ${fmtD(att.map(p=>p.date).sort()[0])}. Vérifie ton compte ou relance l'agence.`]);
   const ap=S.depenses.filter(x=>x.paye===false).sort((a,b)=>(a.echeance||"9").localeCompare(b.echeance||"9"));
   if(ap.length){const late=ap.filter(x=>x.echeance&&x.echeance<t),soon=ap.filter(x=>x.echeance&&x.echeance>=t&&daysTo(x.echeance)<=7);
@@ -213,7 +214,7 @@ function render(){
   // graphique
   const ms=[];for(let i=5;i>=0;i--){const d=new Date(cur);d.setMonth(d.getMonth()-i);ms.push(d)}
   const actif=k=>S.paies.some(p=>(p.date||"").startsWith(k))||S.depenses.some(p=>(p.date||"").startsWith(k));
-  const vals=ms.map(d=>{const kk=mkey(d),x=monthData(kk);return[x.recu+x.att,actif(kk)?x.dep:0]});
+  const vals=ms.map(d=>{const kk=mkey(d),x=monthData(kk);return[x.recu+x.att+x.arch,actif(kk)?x.dep:0]});
   const mx=Math.max(1,...vals.flat());
   $("chart").innerHTML=ms.map((d,i)=>`<div class="c"><div class="bars"><i style="height:${vals[i][0]/mx*100}%;background:#f4f4f5"></i><i style="height:${vals[i][1]/mx*100}%;background:var(--acc)"></i></div><small>${d.toLocaleDateString("fr-BE",{month:"short"}).replace(".","")}</small></div>`).join("");
   const withRev=vals.filter(v=>v[0]>0);$("chartAvg").textContent=withRev.length?"moy. "+eur(sum(withRev,v=>v[0])/withRev.length):"";
@@ -233,10 +234,10 @@ function render(){
     `<button class="btn sm" data-paie="${m.id}">+ Paie</button><button class="del" data-del="missions:${m.id}">×</button>`)}).join(""):`<div class="empty">Aucune mission</div>`;
 
   // paies
-  const pm=[...M.p].sort((a,b)=>b.date.localeCompare(a.date));
+  const pm=[...M.pAll].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
-    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
-    `<span class="amt ${p.recu?"pos":"pend"}" data-toggle="${p.id}" style="cursor:pointer">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`)}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:`<div class="empty">Aucune paie ce mois</div>`;
+    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
+    `<span class="amt ${p.archive?"":p.recu?"pos":"pend"}" ${p.archive?"":`data-toggle="${p.id}"`} style="cursor:pointer;${p.archive?"color:var(--mut)":""}">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`)}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:`<div class="empty">Aucune paie ce mois</div>`;
 
   // fixes
   $("fixes").innerHTML=S.fixes.length?S.fixes.map(f=>row("fixe:"+f.id,`<b>${esc(f.nom)}</b>${f.jour?`<small>le ${esc(f.jour)} du mois</small>`:""}`,`<span class="amt out">${eur2(f.montant)}</span><button class="del" data-del="fixes:${f.id}">×</button>`)).join("")+`<div class="row"><div class="l"><b>Total</b></div><span class="amt">${eur2(fx)}</span></div>`:`<div class="empty">Loyer, assurance, téléphone, abonnements…</div>`;
@@ -264,7 +265,7 @@ function renderStats(){
   const moisActifs=new Set([...P,...D].map(x=>x.date.slice(0,7)));
   const nbM=Math.max(1,moisActifs.size);
   $("yLabel").textContent="Net gagné en "+y;$("yNet").textContent=eur(net);
-  $("ySub").textContent=P.length?`${P.length} paie(s) · moy. ${eur(net/nbM)}/mois`:"Aucune paie cette année";
+  const nA=sum(P.filter(p=>p.archive),p=>p.montant);$("ySub").textContent=P.length?`${P.length} paie(s) · moy. ${eur(net/nbM)}/mois${nA?" · dont "+eur(nA)+" d'anciennes fiches":""}`:"Aucune paie cette année";
   $("yHeures").textContent=fmtN(h)+" h";
   const brutDet=P.filter(p=>p.detail&&p.detail.brut);$("yJours").textContent=brutDet.length?`brut scanné : ${eur(sum(brutDet,p=>p.detail.brut))}`:"";
   $("yNetH").textContent=h?eur2(sum(P.filter(p=>+p.heures>0),p=>p.montant)/sum(P.filter(p=>+p.heures>0),p=>p.heures)):"—";
@@ -294,7 +295,7 @@ function renderStats(){
   // mois par mois
   const nowK=mkey(new Date());let rows="";const first=[...moisActifs].sort()[0]||nowK;
   for(let i=0;i<12;i++){const k=y+"-"+String(i+1).padStart(2,"0");const x=monthData(k);const act=moisActifs.has(k);if(!act&&(k>nowK||k<first))continue;
-    const rev=x.recu+x.att, dd=act?x.dep:0;
+    const rev=x.recu+x.att+x.arch, dd=act?x.dep:0;
     rows+=`<tr class="${k===nowK?"cur":""}"><td>${new Date(k+"-15").toLocaleDateString("fr-BE",{month:"short"})}</td><td>${rev?eur(rev):"—"}</td><td>${dd?eur(dd):"—"}</td><td class="${rev-dd<0?"out":rev-dd>0?"pos":""}">${rev||dd?eur(rev-dd):"—"}</td></tr>`}
   $("parMois").innerHTML=rows?`<table class="mt"><tr><th>Mois</th><th>Revenus</th><th>Dépenses</th><th>Solde</th></tr>${rows}</table>`:`<div class="empty">Rien en ${y}</div>`;
 }
@@ -373,7 +374,7 @@ function renderExtras(M,k){
   if(N1.var_>0&&M.var_>0){const dlt=(M.var_-N1.var_)/N1.var_*100;$("depSub").innerHTML+=`<br><span style="color:${dlt>0?"var(--out)":"var(--pos)"}">${dlt>0?"▲":"▼"} ${Math.abs(Math.round(dlt))} % vs ${new Date(kN1+"-15").toLocaleDateString("fr-BE",{month:"short",year:"numeric"})}</span>`}
   // semaine
   const d7=new Date();d7.setDate(d7.getDate()-6);const d14=new Date();d14.setDate(d14.getDate()-13);const a7=iso(d7),a14=iso(d14);
-  const lf=x=>x.fixe&&S.fixes.some(f=>f.id===x.fixe);const W=S.depenses.filter(x=>x.date>=a7&&x.date<=t&&!lf(x)),W0=S.depenses.filter(x=>x.date>=a14&&x.date<a7&&!lf(x)),Pw=S.paies.filter(p=>p.date>=a7&&p.date<=t);
+  const lf=x=>x.fixe&&S.fixes.some(f=>f.id===x.fixe);const W=S.depenses.filter(x=>x.date>=a7&&x.date<=t&&!lf(x)),W0=S.depenses.filter(x=>x.date>=a14&&x.date<a7&&!lf(x)),Pw=S.paies.filter(p=>p.date>=a7&&p.date<=t&&!p.archive);
   $("weekCard").hidden=!(W.length||Pw.length);
   if(W.length||Pw.length){const tw=sum(W,x=>x.montant),t0=sum(W0,x=>x.montant),cc={};W.forEach(x=>cc[x.cat]=(cc[x.cat]||0)+(+x.montant||0));const top=Object.entries(cc).sort((a,b)=>b[1]-a[1])[0];
     $("weekBody").innerHTML=`<div class="two" style="margin-top:8px"><div><div class="sub">Dépensé (7 j)</div><div class="v out" style="font-size:20px">${eur(tw)}</div>${t0?`<div class="sub" style="color:${tw>t0?"var(--out)":"var(--pos)"}">${tw>t0?"▲":"▼"} ${eur(Math.abs(tw-t0))} vs sem. passée</div>`:""}</div><div><div class="sub">Reçu (7 j)</div><div class="v pos" style="font-size:20px">${eur(sum(Pw,p=>p.montant))}</div>${top?`<div class="sub">Top : ${esc(top[0])} ${eur(top[1])}</div>`:""}</div></div>`}
@@ -475,8 +476,8 @@ function resumeDonnees(){
   const act=S.missions.filter(m=>!m.fin||m.fin>=today());L.push("Missions en cours/à venir : "+(act.map(m=>`${m.client||""} (${m.agence}) ${m.taux?m.taux+" €/h brut":""}${m.hsem?" "+m.hsem+" h/sem":""} ${m.debut||""}→${m.fin||"?"}${m.contrat&&m.contrat.horaire?" horaire "+m.contrat.horaire:""}${+m.km>0?" trajet "+m.km+" km aller ("+eur2(coutJour(m))+"/jour)":""}`).join("; ")||"aucune"));
   const ms=[];for(let i=0;i<6;i++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const k=mkey(d),x=monthData(k),c={};x.d.forEach(e=>c[e.cat]=(c[e.cat]||0)+(+e.montant||0));
     ms.push(`${k} : revenus ${eur(x.recu+x.att)}, dépenses variables ${eur(x.var_)} [${Object.entries(c).map(([n,v])=>n+" "+eur(v)).join(", ")}]`)}
-  L.push("Par mois :\n"+ms.join("\n"));
-  const tx=[...S.paies.map(p=>`${p.date};PAIE;+${p.montant};${p.heures||""}h`),...S.depenses.map(d=>`${d.date};DEPENSE;-${d.montant};${d.cat};${(d.note||"").slice(0,30)}${d.paye===false?";À PAYER":""}`)].sort().reverse().slice(0,250);
+  L.push("Par mois (revenus = argent disponible, hors anciennes fiches d'historique) :\n"+ms.join("\n"));
+  const tx=[...S.paies.map(p=>`${p.date};PAIE${p.archive?" (historique, argent déjà dépensé)":""};+${p.montant};${p.heures||""}h`),...S.depenses.map(d=>`${d.date};DEPENSE;-${d.montant};${d.cat};${(d.note||"").slice(0,30)}${d.paye===false?";À PAYER":""}`)].sort().reverse().slice(0,250);
   L.push("Transactions récentes (date;type;montant;catégorie;note) :\n"+tx.join("\n"));
   if(S.dettes.some(x=>!x.regle))L.push("Dettes : "+S.dettes.filter(x=>!x.regle).map(x=>`${x.personne} ${x.sens==="du"?"me doit":"je dois"} ${eur2(x.montant)}`).join(", "));
   return L.join("\n");
@@ -531,6 +532,7 @@ const PROMPT_RELEVE=()=>`Tu lis un relevé de compte bancaire belge (capture d'�
 Réponds UNIQUEMENT avec un JSON : {"operations":[{"date":"YYYY-MM-DD","libelle":"bénéficiaire ou description courte","montant":nombre (négatif = sortie, positif = entrée),"categorie":une valeur parmi ${JSON.stringify(cats())},"salaire":true si c'est un salaire / une paie d'agence d'intérim}]}
 Maximum 60 opérations. Ignore les soldes et totaux. N'invente rien. Si ce n'est pas un relevé : {"erreur":"explication courte"}.`;
 async function scanReleve(f){
+  if(/\.csv$|\.txt$/i.test(f.name||"")||/csv|text\/plain|excel/.test(f.type||""))return importCSV(f);
   if(!model){toast("Scan indisponible");return}
   openRaw(`<h3>Lecture du relevé <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini lit tes opérations… (10 à 40 s)</div>`);
   const ctl=scanCtl=new AbortController();
@@ -542,13 +544,10 @@ async function scanReleve(f){
       const dup=m<0?S.depenses.some(d=>near(d.date,o.date,3)&&Math.abs(+d.montant-Math.abs(m))<0.01):S.paies.some(p=>near(p.date,o.date,7)&&Math.abs(+p.montant-m)<0.01);
       const ag=S.missions.some(mi=>mi.agence&&lib.toLowerCase().includes(mi.agence.toLowerCase().split(/[ .]/)[0]));
       return{date:o.date,libelle:lib,montant:m,cat:cats().includes(o.categorie)?o.categorie:cats()[cats().length-1],salaire:!!o.salaire||ag,dup}});
-    openRaw(`<h3>${releveRes.length} opération(s) <button class="del" data-close>×</button></h3>
-      <p class="sub" style="margin-bottom:6px">Les doublons (déjà dans l'appli) sont décochés. Les entrées d'argent ne sont importées que si ce sont des paies.</p>
-      <form data-f="releve">${releveRes.map((o,i)=>`<div class="chk-row"><input type="checkbox" name="o${i}" ${!o.dup&&(o.montant<0||o.salaire)?"checked":""}><div class="l"><b>${esc(o.libelle)}</b><small>${fmtD(o.date)} · ${o.montant>0?(o.salaire?"💶 paie":"entrée"):esc(o.cat)}${o.dup?" · déjà présent":""}</small></div><b class="${o.montant<0?"out":"pos"}">${o.montant>0?"+":""}${eur2(o.montant)}</b></div>`).join("")}
-      <button class="btn" style="margin-top:10px">Importer la sélection</button></form>`);
+    afficherReleve(`${releveRes.length} opération(s)`);
   }catch(e){if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;console.error(e);openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`)}
 }
-$("bReleve").onclick=()=>pickSource("Relevé bancaire (capture ou PDF)",f=>scanReleve(f));
+$("bReleve").onclick=()=>pickSource("Relevé bancaire : capture, PDF ou fichier CSV",f=>scanReleve(f));
 
 /* ---------- scan de contrat intérimaire ---------- */
 const PROMPT_CONTRAT=`Tu lis la photo, capture d'écran ou PDF d'un CONTRAT DE TRAVAIL INTÉRIMAIRE (probablement belge) : contrat journalier/hebdomadaire, prolongation ou avenant.
@@ -695,7 +694,7 @@ function calcScore(M,k){const R=S.reglages,fx=fixesTotal(),t=today(),parts=[];
   const reste=M.recu+M.att-M.dep;parts.push({n:"Reste à vivre",max:20,v:reste>=0?20:Math.max(0,20+reste/Math.max(300,fx)*20),tip:reste<0?`Tu dépenses ${eur(-reste)} de plus que tes revenus ce mois-ci.`:""});
   const bl=Object.entries(S.budgets).filter(([,v])=>+v>0),ok=bl.filter(([c,v])=>sum(M.d.filter(x=>x.cat===c),x=>x.montant)<=v).length,over=bl.filter(([c,v])=>sum(M.d.filter(x=>x.cat===c),x=>x.montant)>v);
   parts.push({n:"Budgets",max:15,v:bl.length?ok/bl.length*15:9,tip:over.length?`Budget dépassé : ${over.map(x=>x[0]).join(", ")}.`:bl.length?"":"Fixe des budgets par catégorie pour mieux te suivre."});
-  const late=S.depenses.filter(x=>x.paye===false&&x.echeance&&x.echeance<t).length+S.paies.filter(p=>!p.recu&&p.date<t).length;
+  const late=S.depenses.filter(x=>x.paye===false&&x.echeance&&x.echeance<t).length+S.paies.filter(p=>!p.recu&&!p.archive&&p.date<t).length;
   parts.push({n:"Retards",max:15,v:Math.max(0,15-late*5),tip:late?`${late} facture(s) ou paie(s) en retard à régler.`:""});
   const score=Math.round(sum(parts,p=>p.v));return{score,parts}}
 function renderScore(M,k){const {score,parts}=calcScore(M,k);
@@ -742,6 +741,7 @@ async function gererPartage(){const f=await lireFichierPartage();if(!f){toast("A
   openRaw(`<h3>Document reçu <button class="del" data-close>×</button></h3><p class="sub" style="margin-bottom:10px">${esc(f.name)} · ${Math.round(f.size/1024)} Ko. C'est quoi ?</p>
    <div style="display:grid;gap:10px"><button class="btn" data-share="auto">🤖 Laisse l'IA deviner</button><button class="btn sec" data-share="paie">💶 Fiche de paie</button><button class="btn sec" data-share="facture">🧾 Facture / ticket</button><button class="btn sec" data-share="contrat">📑 Contrat</button><button class="btn sec" data-share="releve">🏦 Relevé bancaire</button></div>`)}
 async function routerPartage(type){const f=sharedFile;if(!f)return;
+  if(/\.csv$/i.test(f.name||"")||/csv/.test(f.type||""))type="releve";
   if(type==="auto"){if(!model){toast("IA indisponible");return}openRaw(`<h3>Analyse… <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Je regarde de quel document il s'agit…</div>`);
     try{const img=await toJpegB64(f);const res=await model.generateContent([`Quel est ce document ? Réponds UNIQUEMENT avec un JSON {"type":"paie"|"facture"|"contrat"|"releve"|"autre"} : "paie" = fiche de paie / décompte de salaire, "facture" = facture ou ticket de caisse, "contrat" = contrat de travail intérimaire, "releve" = relevé ou capture d'opérations bancaires.`,{inlineData:img}]);
       type=(parseJSON(res.response.text())||{}).type}catch(e){openRaw(`<h3>Analyse impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`);return}
@@ -765,6 +765,101 @@ async function renderBio(){const ok=await bioDispo(),pin=!!LS.get("pinHash",null
 $("bBio").onclick=()=>{if(LS.get("bioId",null)){LS.set("bioId",null);renderBio();toast("Empreinte désactivée")}else bioActiver()};
 $("bBioUnlock").onclick=()=>bioDeverrouiller();
 renderBio();
+
+/* ---------- import d'anciennes fiches de paie (historique) ---------- */
+let histoRes=[];
+async function scanHisto(files){
+  if(!model){toast("Scan indisponible");return}
+  histoRes=[];openRaw(`<h3>Lecture de ${files.length} fiche(s) <button class="del" data-close>×</button></h3><div class="est" id="histoProg"><span class="spin"></span>0 / ${files.length}</div><p class="sub" style="margin-top:8px">Garde l'appli ouverte pendant la lecture.</p>`);
+  const ctl=scanCtl=new AbortController();
+  for(let i=0;i<files.length;i++){if(ctl.signal.aborted)return;
+    try{const img=await toJpegB64(files[i]);const res=await model.generateContent([PROMPT,{inlineData:img}]);const r=parseJSON(res.response.text());
+      if(r&&!r.erreur&&(+r.net||+r.brut)){["brut","net","heures","taux_horaire_brut"].forEach(k=>{r[k]=r[k]!=null&&r[k]!==""?+r[k]||null:null});
+        ["periode_debut","periode_fin","date_paiement"].forEach(k=>{if(!isDate(r[k]))r[k]=null});
+        r.lignes=Array.isArray(r.lignes)?r.lignes.slice(0,25).map(l=>({libelle:String(l.libelle||"").slice(0,80),montant:Math.abs(+l.montant||0),type:["gain","retenue","info"].includes(l.type)?l.type:"info"})):[];
+        r.jours=Array.isArray(r.jours)?r.jours.filter(j=>isDate(j.date)&&+j.heures>0).slice(0,31):[];delete r.resume;
+        const date=r.date_paiement||r.periode_fin||r.periode_debut;
+        const dup=S.paies.some(p=>p.date===date&&Math.abs(+p.montant-(+r.net||0))<0.01)||histoRes.some(x=>x.date===date&&Math.abs((+x.r.net||0)-(+r.net||0))<0.01);
+        histoRes.push({r,file:files[i],date:date||today(),dup,sansDate:!date})}
+    }catch(e){console.error(e);if(i===0){openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`);return}}
+    if($("histoProg"))$("histoProg").innerHTML=`<span class="spin"></span>${i+1} / ${files.length}`}
+  if(scanCtl===ctl)scanCtl=null;
+  if(!histoRes.length){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">Aucune fiche de paie reconnue.</div>`);return}
+  histoRes.sort((a,b)=>a.date.localeCompare(b.date));
+  const tot=sum(histoRes.filter(x=>!x.dup),x=>x.r.net),h=sum(histoRes.filter(x=>!x.dup),x=>x.r.heures);
+  openRaw(`<h3>${histoRes.length} ancienne(s) fiche(s) <button class="del" data-close>×</button></h3>
+    <div class="okbox">📚 Elles seront ajoutées à ton <b>historique</b> : elles comptent pour ta prime de fin d'année, ton pécule et tes stats, mais <b>pas</b> comme argent disponible.</div>
+    <form data-f="histo">${histoRes.map((x,i)=>`<div class="chk-row"><input type="checkbox" name="h${i}" ${x.dup?"":"checked"}><div class="l"><b>${esc(x.r.agence||"?")}${x.r.client?" · "+esc(x.r.client):""}</b><small>${x.sansDate?"⚠ date illisible · ":""}${new Date(x.date+"T12:00").toLocaleDateString("fr-BE")}${x.r.heures?" · "+fmtN(x.r.heures)+" h":""}${x.r.brut?" · "+eur(x.r.brut)+" brut":""}${x.dup?" · déjà présente":""}</small></div><b>${x.r.net?eur2(x.r.net):"—"}</b></div>`).join("")}
+    <p class="sub" style="margin:8px 0">Total : ${eur2(tot)} net · ${fmtN(h)} h. Les missions sont créées automatiquement par agence et client.</p>
+    <label class="chk"><input type="checkbox" name="photos" checked> Garder les photos des fiches</label>
+    <button class="btn">Ajouter à l'historique</button></form>`);
+}
+function saveHisto(f){let n=0;const lo=s=>(s||"").toLowerCase(),first=s=>lo(s).split(/[ .\-]/)[0];
+  histoRes.forEach((x,i)=>{if(!f["h"+i]||!f["h"+i].checked)return;const r=x.r;
+    let m=S.missions.find(m=>m.agence&&r.agence&&(lo(r.agence).includes(lo(m.agence))||lo(m.agence).includes(first(r.agence)))&&(!r.client||!m.client||lo(r.client).includes(first(m.client))||lo(m.client).includes(first(r.client))));
+    if(!m&&r.agence){m={id:uid(),agence:r.agence,client:r.client||"",debut:r.periode_debut||x.date,fin:r.periode_fin||x.date,taux:r.taux_horaire_brut||0};S.missions.push(m)}
+    else if(m){if(r.periode_debut&&(!m.debut||r.periode_debut<m.debut))m.debut=r.periode_debut;if(!m.taux&&r.taux_horaire_brut)m.taux=r.taux_horaire_brut}
+    const id=uid();S.paies.push({id,mission:m?m.id:"",date:x.date,montant:+r.net||0,recu:true,archive:true,heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});n++;
+    if(f.photos&&f.photos.checked)savePhoto(x.file).then(ph=>{const p=S.paies.find(p=>p.id===id);if(ph&&p){p.photo=ph;save()}})});
+  histoRes=[];closeSheet();save();toast(`${n} fiche(s) ajoutée(s) à l'historique 📚`)}
+$("bHisto").onclick=()=>pickSource("Anciennes fiches de paie (plusieurs possibles)",fs=>scanHisto(Array.isArray(fs)?fs:[fs]),true);
+
+/* ---------- import CSV bancaire (CBC/KBC, Belfius, ING, BNP…) : lu sur le téléphone, rien n'est envoyé ---------- */
+function parseCSV(txt){txt=txt.replace(/^﻿/,"");const first=txt.split(/\r?\n/).find(l=>l.trim())||"";
+  const delim=[";",",","\t"].map(d=>[d,first.split(d).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const rows=[];let row=[],cell="",q=false;
+  for(let i=0;i<txt.length;i++){const c=txt[i];
+    if(q){if(c==='"'){if(txt[i+1]==='"'){cell+='"';i++}else q=false}else cell+=c}
+    else if(c==='"')q=true;else if(c===delim){row.push(cell);cell=""}
+    else if(c==="\n"||c==="\r"){if(c==="\r"&&txt[i+1]==="\n")i++;row.push(cell);if(row.some(x=>x.trim()))rows.push(row);row=[];cell=""}
+    else cell+=c}
+  row.push(cell);if(row.some(x=>x.trim()))rows.push(row);return rows}
+const nrm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+function parseMontant(s){s=String(s||"").replace(/[€\s ]/g,"");if(!s)return NaN;
+  if(/,\d{1,2}$/.test(s))s=s.replace(/\./g,"").replace(",",".");else s=s.replace(/,/g,"");return parseFloat(s)}
+function parseDateFR(s){s=String(s||"").trim();let m;
+  if((m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/))){const y=m[3].length===2?"20"+m[3]:m[3];return `${y}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`}
+  if((m=s.match(/^(\d{4})-(\d{2})-(\d{2})/)))return `${m[1]}-${m[2]}-${m[3]}`;
+  if((m=s.match(/^(\d{4})(\d{2})(\d{2})$/)))return `${m[1]}-${m[2]}-${m[3]}`;return null}
+function lireCSVBanque(txt){const rows=parseCSV(txt);
+  const hi=rows.findIndex(r=>r.some(c=>/date|datum/.test(nrm(c)))&&r.some(c=>/montant|bedrag|amount|debit|credit/.test(nrm(c))));
+  if(hi<0)throw new Error("Colonnes non reconnues (il faut au moins une date et un montant).");
+  const H=rows[hi].map(nrm),col=(...re)=>{for(const r of re){const i=H.findIndex(h=>r.test(h));if(i>=0)return i}return -1};
+  const cD=col(/^date$/,/date (d.)?execution|date comptable|boekingsdatum|uitvoeringsdatum/,/^datum/,/date/),cM=col(/^montant$/,/^bedrag$/,/^amount$/,/montant|bedrag/),cDeb=col(/debit/),cCre=col(/credit/);
+  const cN=col(/nom (de la )?contrepartie|naam (van de )?tegenpartij|beneficiaire|counterparty/),cL=col(/^description$/,/omschrijving|libelle|description/),cC=col(/communication libre/,/vrije mededeling/,/^communication$/,/^mededeling$/,/communication/,/mededeling/);
+  const out=[];
+  for(const r of rows.slice(hi+1)){const date=parseDateFR(r[cD]);let m=cM>=0?parseMontant(r[cM]):NaN;
+    if(isNaN(m)&&(cDeb>=0||cCre>=0)){const d=parseMontant(r[cDeb]),c=parseMontant(r[cCre]);m=(isNaN(c)?0:Math.abs(c))-(isNaN(d)?0:Math.abs(d))}
+    if(!date||isNaN(m)||!m)continue;
+    const lib=[r[cN],cN<0?r[cL]:"",(!r[cN]&&cL>=0)?r[cL]:"",(!r[cN]&&!r[cL])?r[cC]:""].map(x=>String(x||"").trim()).filter(Boolean)[0]||String(r[cL]||r[cC]||"Opération").trim();
+    out.push({date,montant:Math.round(m*100)/100,libelle:lib.replace(/\s+/g," ").slice(0,50),texte:[r[cN],r[cL],r[cC]].join(" ")})}
+  if(!out.length)throw new Error("Aucune opération trouvée dans ce fichier.");return out}
+const MOTS_CAT=[[/delhaize|colruyt|aldi|lidl|carrefour|intermarche|spar|okay|match|proxy|albert heijn|cora|super/,"Courses"],[/total|shell|esso|q8|texaco|lukoil|dats|gabriels|octa|power|maes|station/,"Carburant"],[/sncb|nmbs|stib|mivb|tec|de lijn|parking|uber|bolt|indigo|peage|bebat/,"Transport"],[/quick|mcdo|mcdonald|burger|kfc|pizza|resto|restaurant|cafe|brasserie|deliveroo|uber eats|takeaway|snack|friterie/,"Resto"],[/pharma|apotheek|medecin|mutualite|mutualiteit|hopital|dentiste|kine/,"Santé"],[/proximus|orange|telenet|base|voo|scarlet|engie|luminus|totalenergies|eneco|vivaqua|swde|loyer|ikea|brico|gamma|hubo|action/,"Maison"],[/zara|h&m|primark|c&a|kiabi|jbc|decathlon|zalando|vinted/,"Vêtements"],[/netflix|spotify|disney|cinema|kinepolis|steam|playstation|xbox|basic.?fit|jims|fitness/,"Loisirs"]];
+function catDevine(t){t=nrm(t);for(const [re,c] of MOTS_CAT)if(re.test(t)&&cats().includes(c))return c;return cats().includes("Autre")?"Autre":cats()[cats().length-1]}
+async function importCSV(f){
+  openRaw(`<h3>Lecture du fichier <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Je lis tes opérations…</div>`);
+  let ops;try{ops=lireCSVBanque(await f.text())}catch(e){openRaw(`<h3>Import impossible <button class="del" data-close>×</button></h3><div class="est">${esc(e.message)}</div><p class="sub" style="margin-top:8px">Exporte le fichier au format CSV depuis ta banque en ligne (sur ordinateur), puis réessaie.</p>`);return}
+  ops=ops.slice(-400);
+  const near=(a,b,n)=>Math.abs(new Date(a)-new Date(b))<=n*864e5;
+  releveRes=ops.map(o=>{const m=o.montant,lib=o.libelle;
+    const dup=m<0?S.depenses.some(d=>near(d.date,o.date,3)&&Math.abs(+d.montant-Math.abs(m))<0.01):S.paies.some(p=>near(p.date,o.date,7)&&Math.abs(+p.montant-m)<0.01);
+    const ag=S.missions.some(mi=>mi.agence&&nrm(o.texte).includes(nrm(mi.agence).split(/[ .]/)[0]))||/salaire|loon|wedde|interim|randstad|adecco|manpower|start people|asap|tempo.?team|accent|daoust|synergie|unique|trace/.test(nrm(o.texte));
+    return{date:o.date,libelle:lib,montant:m,cat:catDevine(o.texte),salaire:m>0&&ag,dup}});
+  // catégories affinées par l'IA si disponible (libellés seulement, sans numéros de compte)
+  if(textModel&&model){try{$("sheet").querySelector(".est").innerHTML=`<span class="spin"></span>${releveRes.length} opérations · je classe les dépenses…`;
+    const dep=releveRes.map((o,i)=>[i,o]).filter(([,o])=>o.montant<0).slice(0,200);
+    if(dep.length){const res=await model.generateContent(`Classe chaque dépense bancaire belge dans une catégorie parmi ${JSON.stringify(cats())}. Réponds UNIQUEMENT avec un JSON {"c":{"index":"catégorie"}}.\n`+dep.map(([i,o])=>`${i}: ${o.libelle} (${Math.abs(o.montant)} €)`).join("\n"));
+      const j=parseJSON(res.response.text());if(j&&j.c)Object.entries(j.c).forEach(([i,c])=>{if(releveRes[+i]&&cats().includes(c))releveRes[+i].cat=c})}}catch(e){console.warn("classement IA",e)}}
+  afficherReleve(`${releveRes.length} opération(s) importée(s) du fichier`);
+}
+function afficherReleve(titre){
+  const nSel=releveRes.filter(o=>!o.dup&&(o.montant<0||o.salaire)).length;
+  openRaw(`<h3>${esc(titre)} <button class="del" data-close>×</button></h3>
+    <p class="sub" style="margin-bottom:6px">Coché par défaut : ${nSel} opération(s). Les doublons (déjà dans l'appli) et les entrées qui ne sont pas des paies sont décochés.</p>
+    <div class="two" style="margin-bottom:6px"><button type="button" class="btn sec sm" data-relall="1">Tout cocher</button><button type="button" class="btn sec sm" data-relall="0">Tout décocher</button></div>
+    <form data-f="releve">${releveRes.map((o,i)=>`<div class="chk-row"><input type="checkbox" name="o${i}" ${!o.dup&&(o.montant<0||o.salaire)?"checked":""}><div class="l"><b>${esc(o.libelle)}</b><small>${fmtD(o.date)} ${o.date.slice(0,4)} · ${o.montant>0?(o.salaire?"💶 paie":"entrée"):esc(o.cat)}${o.dup?" · déjà présent":""}</small></div><b class="${o.montant<0?"out":"pos"}">${o.montant>0?"+":""}${eur2(o.montant)}</b></div>`).join("")}
+    <label class="chk" style="margin-top:8px"><input type="checkbox" name="anciennes" checked> Les paies d'avant ce mois-ci vont dans l'historique 📚 (hors budget)</label>
+    <button class="btn" style="margin-top:10px">Importer la sélection</button></form>`)}
 
 /* ---------- formulaires ---------- */
 const COLL={depense:"depenses",paie:"paies",mission:"missions",fixe:"fixes",objectif:"objectifs",pointage:"pointage",dette:"dettes",cheques:"cr"};
@@ -796,6 +891,7 @@ function openSheet(type,ctx,item,opts={}){
     <label>Montant net (€)<input name="montant" id="pM" type="number" step="0.01" inputmode="decimal" required value="${V("montant")}" ${ed?'data-touched="1"':""}></label>
     <label>Note<input name="note" placeholder="ex. semaine 45" value="${V("note")}"></label>
     <label class="chk"><input type="checkbox" name="recu" ${!ed||it.recu?"checked":""}> Déjà reçue sur mon compte</label>
+    <label class="chk"><input type="checkbox" name="archive" ${it.archive?"checked":""}> 📚 Historique seulement (argent déjà dépensé, ne compte pas dans mon budget)</label>
     ${it.detail?`<button type="button" class="btn sec" data-detail="${it.id}">📄 Voir le détail de la fiche</button>`:""}
     ${ed?(it.photo?`<div class="two"><button type="button" class="btn sec" data-photo="${it.photo}">🖼️ Voir la photo</button><button type="button" class="btn sec" data-attach="paies:${it.id}">🔄 Remplacer</button></div>`:`<button type="button" class="btn sec" data-attach="paies:${it.id}">📎 Joindre la fiche (photo / PDF)</button>`):""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
@@ -854,7 +950,7 @@ function openSheet(type,ctx,item,opts={}){
     ${ed?`<label class="chk"><input type="checkbox" name="regle" ${it.regle?"checked":""}> Réglé</label>`:""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
    choix:`${head("Ajouter")}
-    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn scanBtn" data-mode="facture" ${canImg?"":"hidden"}>🧾 Scanner une facture / un ticket</button><button class="btn scanBtn" data-mode="contrat" ${canImg?"":"hidden"}>📑 Scanner un contrat</button><button class="btn" data-open="depense">💸 Une dépense</button><button class="btn sec" data-open="paie">💶 Une paie reçue</button><button class="btn sec" data-open="mission">🏭 Une mission</button><button class="btn sec" data-open="fixe">🔁 Une charge fixe</button><button class="btn sec" data-open="epargne">🛟 Mettre de côté</button><button class="btn sec" data-open="objectif">🎯 Un objectif</button><button class="btn sec" data-open="pointage">⏱️ Pointer des heures</button><button class="btn sec" data-open="cheques">🍽️ Chèques-repas</button><button class="btn sec" data-open="dette">🤝 Dette / prêt</button></div>`
+    <div style="display:grid;gap:10px"><button class="btn scanBtn" ${canImg?"":"hidden"}>📷 Scanner une fiche de paie</button><button class="btn scanBtn" data-mode="facture" ${canImg?"":"hidden"}>🧾 Scanner une facture / un ticket</button><button class="btn scanBtn" data-mode="contrat" ${canImg?"":"hidden"}>📑 Scanner un contrat</button><button class="btn sec" ${canImg?"":"hidden"} onclick="document.getElementById('bHisto').click()">📚 Anciennes fiches de paie</button><button class="btn" data-open="depense">💸 Une dépense</button><button class="btn sec" data-open="paie">💶 Une paie reçue</button><button class="btn sec" data-open="mission">🏭 Une mission</button><button class="btn sec" data-open="fixe">🔁 Une charge fixe</button><button class="btn sec" data-open="epargne">🛟 Mettre de côté</button><button class="btn sec" data-open="objectif">🎯 Un objectif</button><button class="btn sec" data-open="pointage">⏱️ Pointer des heures</button><button class="btn sec" data-open="cheques">🍽️ Chèques-repas</button><button class="btn sec" data-open="dette">🤝 Dette / prêt</button></div>`
   };
   $("sheet").innerHTML=H[type];$("sheetBg").classList.add("open");
   if(type==="paie"){
@@ -879,7 +975,7 @@ function initAI(){
     textModel=getGenerativeModel(ai,{model:geminiModel,generationConfig:{temperature:0.4}});
     canImg=true;
   }catch(e){console.warn("IA indisponible",e);canImg=false}
-  document.querySelectorAll(".scanBtn").forEach(b=>b.hidden=!canImg);
+  document.querySelectorAll(".scanBtn").forEach(b=>b.hidden=!canImg);$("bHisto").hidden=!canImg;
 }
 async function toJpegB64(file){
   try{
@@ -1060,7 +1156,7 @@ function showFacture(r){
 function showScan(r){
   const ag=(r.agence||"").toLowerCase();
   const match=S.missions.find(m=>ag&&m.agence&&(ag.includes(m.agence.toLowerCase())||m.agence.toLowerCase().includes(ag.split(" ")[0])));
-  const date=r.date_paiement||r.periode_fin||today();
+  const date=r.date_paiement||r.periode_fin||today();const vieille=date<mkey(new Date())+"-01";
   const ratio=r.brut&&r.net?Math.round(r.net/r.brut*100):null;
   // contrôle de la fiche
   const W=[];
@@ -1077,6 +1173,7 @@ function showScan(r){
     <div class="two"><label>Net à enregistrer (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${r.net??""}"></label><label>Date<input name="date" type="date" required value="${esc(date)}"></label></div>
     <label>Mission<select name="mission"><option value="">— Aucune —</option>${r.agence&&!match?`<option value="__new" selected>➕ Créer « ${esc(r.agence)}${r.client?" · "+esc(r.client):""} »</option>`:""}${S.missions.map(m=>`<option value="${m.id}" ${match&&match.id===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("")}</select></label>
     <label class="chk"><input type="checkbox" name="recu" checked> Déjà reçue sur mon compte</label>
+    <label class="chk"><input type="checkbox" name="archive" ${vieille?"checked":""}> 📚 Ancienne fiche : historique seulement (ne compte pas comme argent disponible)</label>
     ${newDays.length?`<label class="chk"><input type="checkbox" name="pointer" checked> Ajouter ${newDays.length} jour(s) au pointage (${fmtN(sum(newDays,j=>j.heures))} h)</label>`:""}
     ${r.cheques_repas_nombre?`<label class="chk"><input type="checkbox" name="crAdd" checked> Ajouter ${r.cheques_repas_nombre} chèque(s)-repas${r.cheques_repas_valeur?" de "+eur2(r.cheques_repas_valeur):""}</label>`:""}
     ${ratio&&ratio>30&&ratio<100?`<label class="chk"><input type="checkbox" name="ratio" ${Math.abs(ratio-S.reglages.ratio)>=2?"checked":""}> Utiliser ce ratio net/brut (${ratio} %) pour mes estimations</label>`:""}
@@ -1094,10 +1191,10 @@ document.addEventListener("submit",e=>{
     if(f.ratio&&f.ratio.checked&&r.brut&&r.net)S.reglages.ratio=Math.round(r.net/r.brut*100);
     if(f.pointer&&f.pointer.checked)r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date)).forEach(j=>S.pointage.push({id:uid(),mission:mid||"",date:j.date,heures:j.heures,type:"normal"}));
     if(f.crAdd&&f.crAdd.checked)S.cr.push({id:uid(),date:d.date,nb:r.cheques_repas_nombre,valeur:r.cheques_repas_valeur||((S.missions.find(x=>x.id===mid)||{}).contrat||{}).cheque_repas_valeur||8,used:0});
-    S.paies.push({id:d.id,mission:mid||"",date:d.date,montant:+d.montant,recu:!!f.recu.checked,heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});
+    S.paies.push({id:d.id,mission:mid||"",date:d.date,montant:+d.montant,recu:!!f.recu.checked,archive:!!(f.archive&&f.archive.checked),heures:r.heures||"",note:r.periode_debut?`du ${fmtD(r.periode_debut)} au ${fmtD(r.periode_fin)}`:"",detail:r});
     if(lastFile){const pid=d.id,file=lastFile;lastFile=null;savePhoto(file).then(ph=>{const p=S.paies.find(x=>x.id===pid);if(ph&&p){p.photo=ph;save()}})}
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
-    scanRes=null;closeSheet();save();toast(S.reglages.pct?`Paie ajoutée · épargne ${eur(+d.montant*S.reglages.pct/100)}`:"Paie ajoutée");return}
+    scanRes=null;closeSheet();save();toast(f.archive&&f.archive.checked?"Ajoutée à l'historique 📚 (hors budget)":S.reglages.pct?`Paie ajoutée · épargne ${eur(+d.montant*S.reglages.pct/100)}`:"Paie ajoutée");return}
   if(t==="facture"&&factRes){const r=factRes;
     const dep={id:d.id,montant:+d.montant,cat:d.cat,date:d.date,note:d.note||"",paye:!!f.paye.checked,echeance:f.paye.checked?"":(d.echeance||""),detail:r};
     S.depenses.push(dep);
@@ -1107,13 +1204,14 @@ document.addEventListener("submit",e=>{
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
     factRes=null;closeSheet();save();toast(dep.paye?"Dépense ajoutée ✓":"Ajoutée · à payer avant le "+fmtD(dep.echeance||d.date));return}
   if(t==="contrat"&&contratRes){saveContrat(f,d);return}
+  if(t==="histo"&&histoRes.length){saveHisto(f);return}
   if(t==="multi"&&multiRes.length){let n=0;multiRes.forEach(({r,file},i)=>{if(!f["m"+i]||!f["m"+i].checked)return;const id=uid();
       S.depenses.push({id,montant:r.montant_total,cat:r.categorie,date:r.date,note:r.fournisseur||"",paye:!(r.echeance&&!r.deja_paye),echeance:r.echeance&&!r.deja_paye?r.echeance:"",detail:r});n++;
       savePhoto(file).then(ph=>{const x=S.depenses.find(x=>x.id===id);if(ph&&x){x.photo=ph;save()}})});
     multiRes=[];closeSheet();save();toast(n+" dépense(s) ajoutée(s) ✓");return}
   if(t==="releve"&&releveRes.length){let n=0;releveRes.forEach((o,i)=>{if(!f["o"+i]||!f["o"+i].checked)return;
       if(o.montant<0){const dd={id:uid(),montant:Math.abs(o.montant),cat:o.cat,date:o.date,note:o.libelle,paye:true};autoLink(dd);S.depenses.push(dd)}
-      else S.paies.push({id:uid(),mission:(S.missions.find(mi=>mi.agence&&o.libelle.toLowerCase().includes(mi.agence.toLowerCase().split(/[ .]/)[0]))||{}).id||"",date:o.date,montant:o.montant,recu:true,heures:"",note:o.libelle});n++});
+      else S.paies.push({id:uid(),mission:(S.missions.find(mi=>mi.agence&&o.libelle.toLowerCase().includes(mi.agence.toLowerCase().split(/[ .]/)[0]))||{}).id||"",date:o.date,montant:o.montant,recu:true,archive:!!(f.anciennes&&f.anciennes.checked&&o.date<mkey(new Date())+"-01"),heures:"",note:o.libelle});n++});
     releveRes=[];closeSheet();save();toast(n+" opération(s) importée(s) ✓");return}
   if(t==="budgets"){const B={};cats().forEach(c=>{const v=+d["b_"+c];if(v>0)B[c]=v});S.budgets=B;closeSheet();save();toast("Budgets enregistrés");return}
   if(t==="epargne"){const m=Math.abs(+d.montant||0)*(+f.dataset.sign||1);if(!m)return;
@@ -1123,7 +1221,7 @@ document.addEventListener("submit",e=>{
     if(S.epargneLog.length>400)S.epargneLog=S.epargneLog.slice(-400);
     closeSheet();save();toast(m>0?`+${eur2(m)} mis de côté 💪`:`${eur2(m)} retiré`);return}
   // ajout / modification générique
-  const fix={depense:x=>{x.montant=+x.montant;x.paye=!!f.paye.checked;if(x.paye)x.echeance=""},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.heures=x.heures?+x.heures:""},
+  const fix={depense:x=>{x.montant=+x.montant;x.paye=!!f.paye.checked;if(x.paye)x.echeance=""},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.archive=!!(f.archive&&f.archive.checked);x.heures=x.heures?+x.heures:""},
     mission:x=>{x.taux=x.taux?+x.taux:0;x.hsem=x.hsem?+x.hsem:"";x.km=x.km?+x.km:"";x.min=x.min?+x.min:"";const dep=(x._dep||"").trim();if(dep&&dep!==S.reglages.domicile)S.reglages.domicile=dep;delete x._dep},fixe:x=>{x.montant=+x.montant},objectif:x=>{x.cible=+x.cible;x.actuel=+x.actuel||0},
     pointage:x=>{x.heures=+x.heures;delete x.semaine},cheques:x=>{x.nb=+x.nb;x.valeur=+x.valeur;x.used=+x.used||0},dette:x=>{x.montant=+x.montant;x.regle=!!(f.regle&&f.regle.checked)}};
   if(!fix[t])return;
@@ -1135,7 +1233,7 @@ document.addEventListener("submit",e=>{
   const coll=S[COLL[t]], eid=f.dataset.id;
   if(eid){const o=coll.find(x=>x.id===eid);if(o){delete d.id;Object.assign(o,d)}}
   else coll.push(d);
-  if(t==="paie"&&!eid&&d.recu&&S.reglages.pct)setTimeout(()=>toast(`Pense à épargner ${eur(d.montant*S.reglages.pct/100)}`),50);
+  if(t==="paie"&&!eid&&d.recu&&!d.archive&&S.reglages.pct)setTimeout(()=>toast(`Pense à épargner ${eur(d.montant*S.reglages.pct/100)}`),50);
   if((t==="paie"||t==="depense")&&d.date){const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1)}
   closeSheet();save();toast(eid?"Modifié ✓":"Ajouté ✓");
 });
@@ -1171,6 +1269,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.subadd){addSub(b.dataset.subadd);return}
   if(b.dataset.subign){S.subsIgnore.push(b.dataset.subign);save();return}
   if(b.dataset.share){routerPartage(b.dataset.share);return}
+  if(b.dataset.relall){document.querySelectorAll('#sheet form[data-f="releve"] .chk-row input').forEach(x=>x.checked=b.dataset.relall==="1");return}
   if(b.dataset.edit2){const[ty,id]=b.dataset.edit2.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.cdetail){const m=S.missions.find(x=>x.id===b.dataset.cdetail);if(m&&m.contrat)openRaw(`<h3>Contrat <button class="del" data-close>×</button></h3>${contratHTML(m.contrat)}`);return}
   if(b.dataset.fdetail){const p=S.depenses.find(x=>x.id===b.dataset.fdetail);if(p&&p.detail)openRaw(`<h3>Détail du document <button class="del" data-close>×</button></h3>${factDetailHTML(p.detail)}`);return}
@@ -1202,7 +1301,7 @@ function pickSource(title,cb,multi=false){pickCb=cb;pickMulti=multi;
   openRaw(`<h3>${title} <button class="del" type="button" data-close>×</button></h3>
   <div style="display:grid;gap:10px"><button class="btn" data-src="gallery">🖼️ Choisir dans la galerie</button><button class="btn sec" data-src="camera">📷 Prendre une photo</button><button class="btn sec" data-src="file">📄 Fichier / PDF</button></div>`)}
 function choosePick(src){const i=$("pickIn");
-  if(src==="file"){i.accept="application/pdf,image/*";i.removeAttribute("capture")}
+  if(src==="file"){i.accept="application/pdf,image/*,.csv,text/csv";i.removeAttribute("capture")}
   else{i.accept="image/*";if(src==="camera")i.setAttribute("capture","environment");else i.removeAttribute("capture")}
   i.multiple=pickMulti&&src!=="camera";
   i.click()}

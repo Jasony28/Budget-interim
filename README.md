@@ -24,6 +24,8 @@ Appli web (PWA) pour gérer son budget d'intérimaire : missions, paies, charges
 - 🚗 Frais de trajet : adresse de départ + adresse de mission → km, coût carburant par jour/mois, net réel par heure, couverture de la prime de mobilité (itinéraire © OpenStreetMap, calcul uniquement sur demande)
 - 📋 Rappels des démarches belges : fiches 281.10, déclaration d'impôts, ONVA, Fonds social
 - 📤 Partager vers l'appli : depuis la galerie ou un mail (appli installée), détection automatique du type de document
+- 📚 Anciennes fiches de paie en lot : historique seulement (comptent pour la prime, le pécule et les stats, pas comme argent disponible)
+- 🏦 Import du CSV de la banque (CBC/KBC, Belfius, ING…) : lu sur le téléphone, catégories devinées, doublons ignorés
 - 🔁 Détection des abonnements → charges fixes
 - ❤️ Score de santé financière du mois (/100) avec conseils
 - 📄 Bilan PDF du mois
