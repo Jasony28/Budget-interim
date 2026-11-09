@@ -3,9 +3,9 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=10";
+import { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } from "./firebase-config.js?v=11";
 
-const APP_VERSION=10;
+const APP_VERSION=11;
 const DEFAULT_CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
 const cats=()=>(S.cats&&S.cats.length?S.cats:DEFAULT_CATS);
 const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],pointage:[],cr:[],dettes:[],defi:[],cats:null,reglages:{epargne:0,pct:10,mois:3,ratio:78,statut:"ouvrier"}};
@@ -15,31 +15,49 @@ const $=id=>document.getElementById(id);
 const eur=n=>(Math.round((+n||0)*100)/100).toLocaleString("fr-BE",{style:"currency",currency:"EUR",maximumFractionDigits:0});
 const eur2=n=>(+n||0).toLocaleString("fr-BE",{style:"currency",currency:"EUR"});
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const today=()=>new Date().toISOString().slice(0,10);
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const today=()=>iso(new Date()); // date locale (pas UTC)
+const fmtN=n=>(+n||0).toLocaleString("fr-BE",{maximumFractionDigits:2});
+const eurT=n=>(+n||0).toLocaleString("fr-BE",{style:"currency",currency:"EUR",minimumFractionDigits:2,maximumFractionDigits:4});
 const mkey=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
 const fmtD=s=>s?new Date(s+"T12:00").toLocaleDateString("fr-BE",{day:"numeric",month:"short"}):"";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(t){const e=$("toast");e.textContent=t;e.classList.add("on");setTimeout(()=>e.classList.remove("on"),1800)}
 
 /* ---------- stockage : Firebase ---------- */
-function normalize(d){d=d||{};return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],defi:d.defi||[],cats:d.cats||null,reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
+const isDate=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s);
+function clean(arr,needDate=true){return (Array.isArray(arr)?arr:[]).filter(x=>x&&typeof x==="object").map(x=>{if(!x.id)x.id=uid();if(needDate&&!isDate(x.date))x.date=today();return x})}
+function normalize(d){d=d||{};const n=normalize0(d);["paies","depenses","pointage","epargneLog","cr","dettes"].forEach(k=>n[k]=clean(n[k]));["missions","fixes","objectifs"].forEach(k=>n[k]=clean(n[k],false));
+  if(!Array.isArray(n.defi))n.defi=[];if(!n.budgets||typeof n.budgets!=="object")n.budgets={};if(n.cats&&!Array.isArray(n.cats))n.cats=null;return n}
+function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],defi:d.defi||[],cats:d.cats||null,reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
 const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
 const fdb=app?initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})}):null;
-let fsDoc=null, unsub=null, curUid=null;
+let fsDoc=null, unsub=null, curUid=null, loaded=false;
 function setSync(t){$("sync").textContent=t}
+function compacter(){ // Firestore : 1 Mo max par document → on allège les vieux détails si besoin
+  let json=JSON.stringify(S);if(json.length<850e3)return json;
+  const items=[...S.paies,...S.depenses].filter(x=>x.detail).sort((a,b)=>a.date.localeCompare(b.date));
+  const step=Math.max(20,Math.ceil(items.length/10)); // par paquets de 10 % (rapide même avec des milliers de lignes)
+  for(let i=0;i<items.length;i+=step){items.slice(i,i+step).forEach(x=>{delete x.detail.lignes;delete x.detail.jours;delete x.detail.resume});json=JSON.stringify(S);if(json.length<800e3)break}
+  if(json.length>=850e3&&S.epargneLog.length>100){S.epargneLog=S.epargneLog.slice(-100);json=JSON.stringify(S)}
+  return json}
 function save(){
+  if(fsDoc&&!loaded){toast("⏳ Chargement de tes données… réessaie dans un instant");return}
   render();syncRappels();
   if(!fsDoc)return;
-  setDoc(fsDoc,JSON.parse(JSON.stringify(S))).catch(e=>{console.error(e);setSync("⚠ Erreur de sauvegarde")});
+  const json=compacter();
+  if(json.length>1e6){setSync("⚠ Données trop volumineuses");toast("⚠ Base presque pleine : fais une sauvegarde puis supprime d'anciennes données");return}
+  setDoc(fsDoc,JSON.parse(json)).catch(e=>{console.error(e);setSync("⚠ Erreur de sauvegarde");toast("⚠ Sauvegarde échouée : "+(e.code||"erreur"))});
 }
 function subscribe(uid){
-  fsDoc=doc(fdb,"budgets",uid);curUid=uid;
+  fsDoc=doc(fdb,"budgets",uid);curUid=uid;loaded=false;
   setSync("Chargement…");
   unsub=onSnapshot(fsDoc,{includeMetadataChanges:true},snap=>{
     const m=snap.metadata;
     if(!m.hasPendingWrites&&snap.exists())S=normalize(snap.data());
+    if(!m.hasPendingWrites&&(snap.exists()||!m.fromCache))loaded=true; // jamais d'écriture avant d'avoir lu les vraies données
     setSync(m.hasPendingWrites?(navigator.onLine?"Sauvegarde…":"Hors ligne · enregistré sur le téléphone"):m.fromCache?"Hors ligne":"✓ Synchronisé");
     render();
     if(!window.__first){window.__first=1;syncRappels();setTimeout(notifierMaintenant,1500);raccourci()}
@@ -54,7 +72,7 @@ function init(){
       $("who").textContent="Connecté : "+(user.email||user.displayName||"");
       subscribe(user.uid);
     }else{
-      document.body.classList.add("signed-out");fsDoc=null;S=JSON.parse(JSON.stringify(DEF));
+      document.body.classList.add("signed-out");fsDoc=null;loaded=false;curUid=null;S=JSON.parse(JSON.stringify(DEF));
     }
   });
   getRedirectResult(auth).catch(e=>{$("loginErr").textContent=loginMsg(e)});
@@ -106,7 +124,7 @@ function monthData(k){
   const recu=p.filter(x=>x.recu).reduce((a,x)=>a+(+x.montant||0),0);
   const att=p.filter(x=>!x.recu).reduce((a,x)=>a+(+x.montant||0),0);
   const all=S.depenses.filter(x=>(x.date||"").startsWith(k));
-  const d=all.filter(x=>!x.fixe); // une facture liée à une charge fixe est déjà comptée dans les fixes
+  const d=all.filter(x=>!(x.fixe&&S.fixes.some(f=>f.id===x.fixe))); // une facture liée à une charge fixe (toujours existante) est déjà comptée dans les fixes
   const var_=d.reduce((a,x)=>a+(+x.montant||0),0);
   return{p,recu,att,d,all,var_,fix:fixesTotal(),dep:var_+fixesTotal()};
 }
@@ -155,7 +173,7 @@ function render(){
   if(!S.missions.length) A.push(["","Ajoute ta première mission","Onglet Paies → nouvelle mission, ou scanne directement une fiche de paie 📷."]);
   else if(!active.length) A.push(["bad","Pas de mission en cours",`Avec tes charges fixes de ${eur(fx)}/mois, ton épargne tient ${fx?(R.epargne/fx).toLocaleString("fr-BE",{maximumFractionDigits:1}):"∞"} mois.`]);
   active.forEach(m=>{if(m.fin){const n=daysTo(m.fin);if(n<=14)A.push([n<=5?"bad":"","Fin de mission "+(n<=0?"aujourd'hui":"dans "+n+" j"),`${esc(m.client||m.agence)} se termine le ${fmtD(m.fin)}. Pense à relancer ton agence.`])}
-    else A.push(["ok","Mission en cours",`${esc(m.client||m.agence)}${m.taux?" · "+eur2(m.taux)+"/h brut":""}`])});
+    else A.push(["ok","Mission en cours",`${esc(m.client||m.agence)}${m.taux?" · "+eurT(m.taux)+"/h brut":""}`])});
   const att=S.paies.filter(p=>!p.recu&&p.date<t);
   if(att.length)A.push(["",`${att.length} paie${att.length>1?"s":""} en retard`,`${eur(sum(att,p=>p.montant))} attendus depuis le ${fmtD(att.map(p=>p.date).sort()[0])}. Vérifie ton compte ou relance l'agence.`]);
   const ap=S.depenses.filter(x=>x.paye===false).sort((a,b)=>(a.echeance||"9").localeCompare(b.echeance||"9"));
@@ -203,13 +221,13 @@ function render(){
     const on=(!m.debut||m.debut<=t)&&(!m.fin||m.fin>=t);
     const h=sum(S.paies.filter(p=>p.mission===m.id),p=>p.heures);
     return row("mission:"+m.id,`<b>${esc(m.client||"Mission")}${on?'<span class="pill g">en cours</span>':(m.debut>t?'<span class="pill y">à venir</span>':'')}</b>
-    <small>${esc(m.agence)} · ${fmtD(m.debut)}${m.fin?" → "+fmtD(m.fin):" → ?"}${m.taux?" · "+eur2(m.taux)+"/h":""}</small><br><small>Reçu : ${eur(missionPaid(m))}${h?" · "+h+" h":""}</small>`,
+    <small>${esc(m.agence)} · ${fmtD(m.debut)}${m.fin?" → "+fmtD(m.fin):" → ?"}${m.taux?" · "+eurT(m.taux)+"/h":""}</small><br><small>Reçu : ${eur(missionPaid(m))}${h?" · "+fmtN(h)+" h":""}</small>`,
     `<button class="btn sm" data-paie="${m.id}">+ Paie</button><button class="del" data-del="missions:${m.id}">×</button>`)}).join(""):`<div class="empty">Aucune mission</div>`;
 
   // paies
   const pm=[...M.p].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
-    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+p.heures+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
+    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
     `<span class="amt ${p.recu?"pos":"pend"}" data-toggle="${p.id}" style="cursor:pointer">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`)}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:`<div class="empty">Aucune paie ce mois</div>`;
 
   // fixes
@@ -222,9 +240,9 @@ function render(){
 
   // dépenses (+ recherche)
   const q=($("search").value||"").trim().toLowerCase();
-  const dl=q?S.depenses.filter(d=>(d.note+" "+d.cat+" "+d.montant).toLowerCase().includes(q)):M.all;
+  const dl=q?S.depenses.filter(d=>((d.note||"")+" "+(d.cat||"")+" "+fmtN(d.montant)+" "+d.montant).toLowerCase().includes(q)):M.all;
   const dm=[...dl].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,q?100:500);
-  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${d.photo?"🖼️ ":d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
+  $("depenses").innerHTML=(q?`<div class="sub" style="padding-bottom:6px">${dl.length} résultat(s) · ${eur2(sum(dl,x=>x.montant))} au total</div>`:"")+(dm.length?dm.map(d=>row("depense:"+d.id,`<b>${d.photo?"🖼️ ":d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.fixe&&S.fixes.some(f=>f.id===d.fixe)?'<span class="pill">charge fixe</span>':""}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${q?new Date(d.date+"T12:00").toLocaleDateString("fr-BE"):fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}" data-ptoggle="${d.id}" style="cursor:pointer">−${eur2(d.montant)}</span><button class="del" data-del="depenses:${d.id}">×</button>`)).join(""):`<div class="empty">${q?"Aucun résultat":"Aucune dépense ce mois"}</div>`);
 
   renderStats();renderOutils();renderExtras(M,k);renderPrevision();renderSettings();
   // réglages
@@ -233,13 +251,13 @@ function render(){
 
 function renderStats(){
   const y=String(cur.getFullYear()), R=S.reglages;
-  const P=S.paies.filter(p=>(p.date||"").startsWith(y)), D=S.depenses.filter(d=>(d.date||"").startsWith(y)&&!d.fixe);
+  const P=S.paies.filter(p=>(p.date||"").startsWith(y)), D=S.depenses.filter(d=>(d.date||"").startsWith(y)&&!(d.fixe&&S.fixes.some(f=>f.id===d.fixe)));
   const net=sum(P,p=>p.montant), h=sum(P,p=>p.heures), fx=fixesTotal();
   const moisActifs=new Set([...P,...D].map(x=>x.date.slice(0,7)));
   const nbM=Math.max(1,moisActifs.size);
   $("yLabel").textContent="Net gagné en "+y;$("yNet").textContent=eur(net);
   $("ySub").textContent=P.length?`${P.length} paie(s) · moy. ${eur(net/nbM)}/mois`:"Aucune paie cette année";
-  $("yHeures").textContent=h+" h";
+  $("yHeures").textContent=fmtN(h)+" h";
   const brutDet=P.filter(p=>p.detail&&p.detail.brut);$("yJours").textContent=brutDet.length?`brut scanné : ${eur(sum(brutDet,p=>p.detail.brut))}`:"";
   $("yNetH").textContent=h?eur2(sum(P.filter(p=>+p.heures>0),p=>p.montant)/sum(P.filter(p=>+p.heures>0),p=>p.heures)):"—";
   const dep=sum(D,d=>d.montant)+fx*moisActifs.size;
@@ -263,7 +281,7 @@ function renderStats(){
   // par agence
   const ag={};P.forEach(p=>{const m=S.missions.find(x=>x.id===p.mission);const n=m?(m.agence||"?"):"Sans mission";(ag[n]=ag[n]||{n:0,h:0,c:0});ag[n].n+=+p.montant||0;ag[n].h+=+p.heures||0;ag[n].c++});
   const al=Object.entries(ag).sort((a,b)=>b[1].n-a[1].n);
-  $("parAgence").innerHTML=al.length?al.map(([n,v])=>`<div class="cat"><span>${esc(n)} <small style="color:var(--mut)">· ${v.c} paie(s)${v.h?" · "+v.h+" h":""}</small></span><b>${eur(v.n)}</b></div><div class="bar" style="margin-top:4px;height:6px"><i style="width:${v.n/al[0][1].n*100}%"></i></div>`).join(""):`<div class="empty">Aucune paie en ${y}</div>`;
+  $("parAgence").innerHTML=al.length?al.map(([n,v])=>`<div class="cat"><span>${esc(n)} <small style="color:var(--mut)">· ${v.c} paie(s)${v.h?" · "+fmtN(v.h)+" h":""}</small></span><b>${eur(v.n)}</b></div><div class="bar" style="margin-top:4px;height:6px"><i style="width:${v.n/al[0][1].n*100}%"></i></div>`).join(""):`<div class="empty">Aucune paie en ${y}</div>`;
 
   // mois par mois
   const nowK=mkey(new Date());let rows="";const first=[...moisActifs].sort()[0]||nowK;
@@ -275,7 +293,6 @@ function renderStats(){
 
 /* ---------- outils intérim ---------- */
 function paques(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;return new Date(y,mo-1,da,12)}
-const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 function feries(y){const p=paques(y),add=n=>{const d=new Date(p);d.setDate(d.getDate()+n);return iso(d)};
   return {[y+"-01-01"]:"Nouvel An",[add(1)]:"Lundi de Pâques",[y+"-05-01"]:"Fête du Travail",[add(39)]:"Ascension",[add(50)]:"Lundi de Pentecôte",[y+"-07-21"]:"Fête nationale",[y+"-08-15"]:"Assomption",[y+"-11-01"]:"Toussaint",[y+"-11-11"]:"Armistice",[y+"-12-25"]:"Noël"}}
 const brutDe=p=>(p.detail&&+p.detail.brut)||(+p.montant||0)/((+S.reglages.ratio||78)/100);
@@ -293,10 +310,10 @@ function renderOutils(){
   let cal=`<div class="cal">${["L","M","M","J","V","S","D"].map(d=>`<div class="h">${d}</div>`).join("")}`;
   for(let i=0;i<first;i++)cal+=`<div></div>`;
   for(let d=1;d<=dim;d++){const ds=k+"-"+String(d).padStart(2,"0");const mis=S.missions.some(mm=>(!mm.debut||mm.debut<=ds)&&(!mm.fin||mm.fin>=ds));const h=byDay[ds];
-    cal+=`<div class="d ${h?"w":mis?"mis":""} ${ds===t?"today":""} ${F[ds]?"fer":""}" data-day="${ds}" title="${F[ds]||""}">${d}${h?`<small>${h}h</small>`:""}</div>`}
+    cal+=`<div class="d ${h?"w":mis?"mis":""} ${ds===t?"today":""} ${F[ds]?"fer":""}" data-day="${ds}" title="${F[ds]||""}">${d}${h?`<small>${fmtN(h)}h</small>`:""}</div>`}
   $("calendar").innerHTML=cal+"</div>";
   const hm=sum(Object.values(byDay),x=>x),jm=Object.keys(byDay).length,fm=Object.entries(F).filter(([d])=>d.startsWith(k));
-  $("calSub").innerHTML=`${jm} jour(s) pointé(s) · ${hm} h${fm.length?` · Férié${fm.length>1?"s":""} : ${fm.map(([d,n])=>fmtD(d)+" ("+n+")").join(", ")}`:""}<br><small>Touche un jour pour pointer tes heures. Rouge = travaillé, foncé = en mission, point jaune = férié payé.</small>`;
+  $("calSub").innerHTML=`${jm} jour(s) pointé(s) · ${fmtN(hm)} h${fm.length?` · Férié${fm.length>1?"s":""} : ${fm.map(([d,n])=>fmtD(d)+" ("+n+")").join(", ")}`:""}<br><small>Touche un jour pour pointer tes heures. Rouge = travaillé, foncé = en mission, point jaune = férié payé.</small>`;
 
   // prime de fin d'année (période 1/7 → 30/6, versée en décembre)
   const yS=now.getMonth()>=6?now.getFullYear():now.getFullYear()-1;
@@ -304,7 +321,7 @@ function renderOutils(){
   const C=periodeStats(cA,cB),P=periodeStats(pA,pB);
   const bloc=(st,a,b,pay,enCours)=>{const okJ=st.jours>=65,okH=st.heures>=494,ok=okJ||okH,prog=Math.min(100,Math.max(st.jours/65,st.heures/494)*100),pb=st.brut*0.0833;
     return `<div class="k">${enCours?"Période en cours":"Période terminée"} : ${fmtD(a)} ${a.slice(0,4)} → ${fmtD(b)} ${b.slice(0,4)}</div>
-    <div class="top" style="display:flex;justify-content:space-between;margin-top:6px"><b>${st.jours} j${st.estime?"*":""} · ${st.heures} h</b><span class="${ok?"pos":"pend"}" style="font-weight:800">${ok?"✓ Droit ouvert":enCours?`encore ${Math.max(0,65-st.jours)} j ou ${Math.max(0,494-st.heures)} h`:"✗ Conditions non atteintes"}</span></div>
+    <div class="top" style="display:flex;justify-content:space-between;margin-top:6px"><b>${st.jours} j${st.estime?"*":""} · ${fmtN(st.heures)} h</b><span class="${ok?"pos":"pend"}" style="font-weight:800">${ok?"✓ Droit ouvert":enCours?`encore ${Math.max(0,65-st.jours)} j ou ${fmtN(Math.max(0,494-st.heures))} h`:"✗ Conditions non atteintes"}</span></div>
     <div class="bar"><i style="width:${prog}%;background:${ok?"var(--pos)":"var(--acc)"}"></i></div>
     <div class="sub" style="margin-top:6px">${ok||enCours?`Prime ${ok?"":"estimée si le droit s'ouvre "}: <b style="color:var(--txt)">${eur(pb)} brut</b> ≈ ${eur(pb*0.66)} net · versée en ${pay}`:""}</div>`};
   $("primeCard").innerHTML=(P.nbPaies?bloc(P,pA,pB,"décembre "+yS,false)+`<div style="height:14px"></div>`:"")+bloc(C,cA,cB,"décembre "+(yS+1),true)+
@@ -348,7 +365,7 @@ function renderExtras(M,k){
   if(N1.var_>0&&M.var_>0){const dlt=(M.var_-N1.var_)/N1.var_*100;$("depSub").innerHTML+=`<br><span style="color:${dlt>0?"var(--out)":"var(--pos)"}">${dlt>0?"▲":"▼"} ${Math.abs(Math.round(dlt))} % vs ${new Date(kN1+"-15").toLocaleDateString("fr-BE",{month:"short",year:"numeric"})}</span>`}
   // semaine
   const d7=new Date();d7.setDate(d7.getDate()-6);const d14=new Date();d14.setDate(d14.getDate()-13);const a7=iso(d7),a14=iso(d14);
-  const W=S.depenses.filter(x=>x.date>=a7&&x.date<=t&&!x.fixe),W0=S.depenses.filter(x=>x.date>=a14&&x.date<a7&&!x.fixe),Pw=S.paies.filter(p=>p.date>=a7&&p.date<=t);
+  const lf=x=>x.fixe&&S.fixes.some(f=>f.id===x.fixe);const W=S.depenses.filter(x=>x.date>=a7&&x.date<=t&&!lf(x)),W0=S.depenses.filter(x=>x.date>=a14&&x.date<a7&&!lf(x)),Pw=S.paies.filter(p=>p.date>=a7&&p.date<=t);
   $("weekCard").hidden=!(W.length||Pw.length);
   if(W.length||Pw.length){const tw=sum(W,x=>x.montant),t0=sum(W0,x=>x.montant),cc={};W.forEach(x=>cc[x.cat]=(cc[x.cat]||0)+(+x.montant||0));const top=Object.entries(cc).sort((a,b)=>b[1]-a[1])[0];
     $("weekBody").innerHTML=`<div class="two" style="margin-top:8px"><div><div class="sub">Dépensé (7 j)</div><div class="v out" style="font-size:20px">${eur(tw)}</div>${t0?`<div class="sub" style="color:${tw>t0?"var(--out)":"var(--pos)"}">${tw>t0?"▲":"▼"} ${eur(Math.abs(tw-t0))} vs sem. passée</div>`:""}</div><div><div class="sub">Reçu (7 j)</div><div class="v pos" style="font-size:20px">${eur(sum(Pw,p=>p.montant))}</div>${top?`<div class="sub">Top : ${esc(top[0])} ${eur(top[1])}</div>`:""}</div></div>`}
@@ -370,7 +387,7 @@ function renderPrevision(){
   let rev=0,src="";
   if(cont.length){const P28=S.pointage.filter(x=>x.date>=iso(new Date(Date.now()-28*864e5))),wk=new Set(P28.map(x=>{const d=new Date(x.date+"T12:00");d.setDate(d.getDate()-((d.getDay()+6)%7));return iso(d)}));
     const h=wk.size?sum(P28,x=>x.heures)/wk.size:38;const m=cont.find(x=>+x.taux>0);
-    if(m){rev=h*4.33*m.taux*S.reglages.ratio/100;src=`${Math.round(h)} h/sem × ${eur2(m.taux)} brut`}else if(mois.length){rev=sum(mois,x=>x)/mois.length;src="moyenne de tes derniers mois"}}
+    if(m){rev=h*4.33*m.taux*S.reglages.ratio/100;src=`${Math.round(h)} h/sem × ${eurT(m.taux)} brut`}else if(mois.length){rev=sum(mois,x=>x)/mois.length;src="moyenne de tes derniers mois"}}
   const dep=fixesTotal()+avgVar();
   $("prevNet").textContent=cont.length?eur(rev-dep):"⚠ Aucune mission";
   $("prevNet").className="v "+(cont.length?(rev-dep>=0?"pos":"out"):"pend");
@@ -404,10 +421,12 @@ $("bDiscret").onclick=()=>{LS.set("discret",!LS.get("discret",false));applyDiscr
 async function hashPin(p){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("budget-interim:"+p));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
 let pinBuf="",pinMode=null,pinFirst="";
 function showPad(mode){pinMode=mode;pinBuf="";$("lock").hidden=false;$("pinMsg").textContent=mode==="set1"?"Choisis un code à 4 chiffres":mode==="set2"?"Confirme ton code":"";drawPin();
-  $("pinPad").innerHTML=[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map(k=>k===""?"<div></div>":`<button type="button" data-pin="${k}">${k}</button>`).join("")+(mode!=="unlock"?`<button type="button" data-pin="x" style="grid-column:1/-1;border-radius:14px;height:48px;font-size:15px">Annuler</button>`:"")}
+  $("pinPad").innerHTML=[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map(k=>k===""?"<div></div>":`<button type="button" data-pin="${k}">${k}</button>`).join("")+(mode!=="unlock"?`<button type="button" data-pin="x" style="grid-column:1/-1;border-radius:14px;height:48px;font-size:15px">Annuler</button>`:`<button type="button" data-pin="forgot" style="grid-column:1/-1;border-radius:14px;height:44px;font-size:13px;background:none;color:var(--mut)">Code oublié ?</button>`)}
 function drawPin(){$("pinDots").textContent="●".repeat(pinBuf.length)+"○".repeat(4-pinBuf.length)}
 $("pinPad").onclick=async e=>{const b=e.target.closest("[data-pin]");if(!b)return;const k=b.dataset.pin;
   if(k==="x"){$("lock").hidden=true;return}
+  if(k==="forgot"){if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Retirer le code et te déconnecter ? Appuie encore";return}
+    LS.set("pinHash",null);$("lock").hidden=true;if(auth)signOut(auth);toast("Code retiré : reconnecte-toi avec Google");return}
   if(k==="⌫"){pinBuf=pinBuf.slice(0,-1);drawPin();return}
   if(pinBuf.length<4)pinBuf+=k;drawPin();if(pinBuf.length<4)return;
   if(pinMode==="unlock"){if(await hashPin(pinBuf)===LS.get("pinHash","")){$("lock").hidden=true;LS.set("pinTries",0)}else{pinBuf="";setTimeout(drawPin,200);$("pinMsg").textContent="Code incorrect"}}
@@ -453,8 +472,12 @@ function resumeDonnees(){
   return L.join("\n");
 }
 const STYLE_IA="Réponds en français, en tutoyant, de façon simple et concrète, avec des montants précis tirés des données. Pas de titres markdown (#), pas de tableaux. Utilise quelques emojis. Ne donne pas de conseil d'investissement financier.";
+let iaBusy=false;
 async function askIA(prompt,out,onDone){
   if(!textModel){out.textContent="L'assistant n'est pas disponible.";return}
+  if(iaBusy){toast("Patiente, je réfléchis encore…");out.remove&&out.classList.contains("msg")&&out.remove();return}
+  iaBusy=true;try{await askIA0(prompt,out,onDone)}finally{iaBusy=false}}
+async function askIA0(prompt,out,onDone){
   out.innerHTML=`<span class="spin"></span>Réflexion…`;
   try{const res=await textModel.generateContent(prompt);const t=res.response.text().replace(/\*\*(.+?)\*\*/g,"$1").replace(/^#+\s*/gm,"").trim();out.textContent=t;onDone&&onDone(t)}
   catch(e){console.error(e);out.textContent=aiErr(e)}
@@ -524,12 +547,14 @@ function openSheet(type,ctx,item,opts={}){
   const it=item||{}, ed=!!item, V=(k,d="")=>esc(it[k]??d);
   const head=(t)=>`<h3>${t} <button class="del" type="button" data-close>×</button></h3>`;
   const delBtn=ed?`<button type="button" class="btn danger" data-del2="${COLL[type]}:${it.id}" style="margin-top:4px">Supprimer</button>`:"";
-  const missOpts=S.missions.map(m=>`<option value="${m.id}" ${(it.mission||ctx)===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("");
-  const lastCat=S.depenses.length?S.depenses[S.depenses.length-1].cat:cats()[0];
+  const actMis=(S.missions.filter(m=>(!m.debut||m.debut<=today())&&(!m.fin||m.fin>=today())).slice(-1)[0]||{}).id;
+  const selMis=ed?it.mission:(ctx||actMis);
+  const missOpts=S.missions.map(m=>`<option value="${m.id}" ${selMis===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("");
+  const lc=S.depenses.length?S.depenses[S.depenses.length-1].cat:"",lastCat=cats().includes(lc)?lc:cats()[0];
   const H={
    depense:`${head(ed?"Modifier la dépense":"Nouvelle dépense")}
     <form data-f="depense" data-id="${V("id")}"><label>Montant (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${V("montant")}"></label>
-    <label>Catégorie</label><div class="chips" id="catChips">${cats().map(c=>`<button type="button" class="${(it.cat||lastCat)===c?"on":""}" data-cat="${c}">${c}</button>`).join("")}</div>
+    <label>Catégorie</label><div class="chips" id="catChips">${cats().map(c=>`<button type="button" class="${(it.cat||lastCat)===c?"on":""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
     <input type="hidden" name="cat" id="catIn" value="${esc(it.cat||lastCat)}">
     <div class="two"><label>Date<input name="date" type="date" value="${V("date",today())}" required></label><label>Note<input name="note" placeholder="ex. Delhaize" value="${V("note")}" list="notesList"></label></div>
     <datalist id="notesList">${[...new Set(S.depenses.map(d=>d.note).filter(Boolean))].slice(-30).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
@@ -574,7 +599,7 @@ function openSheet(type,ctx,item,opts={}){
    budgets:`${head("Budgets par catégorie")}
     <form data-f="budgets"><p class="sub">Plafond mensuel par catégorie. Laisse vide pour ne pas suivre.</p>
     ${cats().map(c=>{const avg=(()=>{let t=0,n=0;for(let i=1;i<=3;i++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const x=sum(S.depenses.filter(e=>e.cat===c&&e.date.startsWith(mkey(d))),e=>e.montant);if(x){t+=x;n++}}return n?t/n:0})();
-      return `<label style="grid-template-columns:1fr 120px;align-items:center;display:grid">${c}${avg?` <small style="font-weight:400">moy. ${eur(avg)}</small>`:""}<input name="b_${c}" type="number" step="1" inputmode="numeric" value="${esc(S.budgets[c]||"")}" placeholder="—"></label>`}).join("")}
+      return `<label style="grid-template-columns:1fr 120px;align-items:center;display:grid">${esc(c)}${avg?` <small style="font-weight:400">moy. ${eur(avg)}</small>`:""}<input name="b_${esc(c)}" type="number" step="1" inputmode="numeric" value="${esc(S.budgets[c]||"")}" placeholder="—"></label>`}).join("")}
     <button class="btn">Enregistrer</button></form>`,
    pointage:`${head(ed?"Modifier le pointage":"Pointer des heures")}
     <form data-f="pointage" data-id="${V("id")}">${S.missions.length?`<label>Mission<select name="mission">${S.missions.map(m=>`<option value="${m.id}" ${(it.mission||(S.missions.find(mm=>(!mm.fin||mm.fin>=today()))||{}).id)===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("")}</select></label>`:""}
@@ -600,7 +625,7 @@ function openSheet(type,ctx,item,opts={}){
   $("sheet").innerHTML=H[type];$("sheetBg").classList.add("open");
   if(type==="paie"){
     const upd=()=>{const m=S.missions.find(x=>x.id===($("pMis")?.value));const h=+$("pH").value;
-      if(m&&m.taux&&h){const n=m.taux*h*S.reglages.ratio/100;$("pEst").innerHTML=`Estimation : <b>${eur2(n)}</b> net<br><small>${h} h × ${eur2(m.taux)} brut × ${S.reglages.ratio}%</small>`;if(!$("pM").dataset.touched)$("pM").value=n.toFixed(2)}
+      if(m&&m.taux&&h){const n=m.taux*h*S.reglages.ratio/100;$("pEst").innerHTML=`Estimation : <b>${eur2(n)}</b> net<br><small>${fmtN(h)} h × ${eurT(m.taux)} brut × ${S.reglages.ratio}%</small>`;if(!$("pM").dataset.touched)$("pM").value=n.toFixed(2)}
       else $("pEst").textContent=m&&!m.taux?"Ajoute un taux horaire à la mission pour estimer le net.":"Choisis une mission et indique les heures pour une estimation du net."};
     $("pH").oninput=upd;if($("pMis"))$("pMis").onchange=upd;$("pM").oninput=()=>$("pM").dataset.touched=1;upd();
   }
@@ -644,7 +669,7 @@ function parseJSON(t){
 }
 function aiErr(e){const m=(String(e&&e.code||"")+" "+String(e&&e.message||e||"")).toLowerCase().replace(/-/g," ");
   if(m.includes("api not enabled")||m.includes("ailogic")||m.includes("get started"))return "Gemini n'est pas encore activé : Console Firebase → AI Logic → « Commencer » → Gemini Developer API (voir README). Attends ensuite 2-3 minutes.";
-  if(m.includes("app check")||m.includes("appcheck")||m.includes("recaptcha"))return (recaptchaV3SiteKey||recaptchaEnterpriseSiteKey)?"App Check refuse l'appli : vérifie que la clé secrète reCAPTCHA est bien enregistrée dans Firebase → App Check, et que le domaine jasony28.github.io est autorisé.":"Scan bloqué par App Check : il manque la clé reCAPTCHA dans l'appli (voir README).";
+  if(m.includes("app check")||m.includes("appcheck")||m.includes("recaptcha"))return (recaptchaV3SiteKey||recaptchaEnterpriseSiteKey)?(recaptchaEnterpriseSiteKey?"App Check refuse l'appli : dans Firebase → App Check → Applications, enregistre l'appli avec « Fraud Defense (reCAPTCHA Enterprise) » et la clé "+recaptchaEnterpriseSiteKey.slice(0,10)+"…, puis attends 5 minutes.":"App Check refuse l'appli : vérifie la clé secrète reCAPTCHA dans Firebase → App Check, et que le domaine jasony28.github.io est autorisé."):"Scan bloqué par App Check : il manque la clé reCAPTCHA dans l'appli (voir README).";
   if(m.includes("429")||m.includes("quota")||m.includes("resource_exhausted"))return "Limite gratuite atteinte pour le moment, réessaie plus tard.";
   if(m.includes("api has not been used")||m.includes("not enabled")||m.includes("permission"))return "Firebase AI Logic n'est pas activé sur ton projet (voir README).";
   if(m.includes("not found")&&m.includes("model"))return "Modèle Gemini introuvable : change geminiModel dans firebase-config.js.";
@@ -667,7 +692,7 @@ function detailHTML(d){
    <div class="card" style="background:var(--card2)"><div class="k">Brut</div><div class="v">${n(d.brut)}</div></div>
    <div class="card" style="background:var(--card2)"><div class="k">Net à payer</div><div class="v pos">${n(d.net)}</div></div>
    <div class="card" style="background:var(--card2)"><div class="k">Retenues</div><div class="v out">${ret?eur2(ret):"—"}</div></div>
-   <div class="card" style="background:var(--card2)"><div class="k">Heures · taux</div><div class="v" style="font-size:17px">${d.heures??"—"} h${d.taux_horaire_brut?" · "+eur2(d.taux_horaire_brut):""}</div></div></div>
+   <div class="card" style="background:var(--card2)"><div class="k">Heures · taux</div><div class="v" style="font-size:17px">${d.heures!=null?fmtN(d.heures):"—"} h${d.taux_horaire_brut?" · "+eurT(d.taux_horaire_brut):""}</div></div></div>
    <div class="sub" style="margin:2px 0 10px">${esc(d.agence||"")}${d.client?" · "+esc(d.client):""}${d.periode_debut?" · du "+fmtD(d.periode_debut)+" au "+fmtD(d.periode_fin):""}</div>
    ${d.resume?`<div class="est" style="margin-bottom:10px">${esc(d.resume)}</div>`:""}
    ${L("gain")?`<div class="k" style="margin-top:6px">Gains</div>${L("gain")}`:""}
@@ -789,7 +814,7 @@ function showFacture(r){
   openRaw(`<h3>${r.type==="ticket"?"Ton ticket":"Ta facture"} <button class="del" data-close>×</button></h3>${factDetailHTML(r)}
    <form data-f="facture" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
     <div class="two"><label>Montant (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${r.montant_total??""}"></label><label>Date<input name="date" type="date" required value="${esc(r.date||today())}"></label></div>
-    <label>Catégorie</label><div class="chips" id="catChips">${cats().map(c=>`<button type="button" class="${r.categorie===c?"on":""}" data-cat="${c}">${c}</button>`).join("")}</div>
+    <label>Catégorie</label><div class="chips" id="catChips">${cats().map(c=>`<button type="button" class="${r.categorie===c?"on":""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
     <input type="hidden" name="cat" id="catIn" value="${esc(r.categorie)}">
     <label>Note<input name="note" value="${esc(r.fournisseur||"")}"></label>
     <label class="chk"><input type="checkbox" name="paye" ${r.deja_paye||!r.echeance?"checked":""}> Déjà payée</label>
@@ -805,12 +830,12 @@ function showScan(r){
   const ratio=r.brut&&r.net?Math.round(r.net/r.brut*100):null;
   // contrôle de la fiche
   const W=[];
-  if(match&&+match.taux>0&&r.taux_horaire_brut&&Math.abs(match.taux-r.taux_horaire_brut)>0.005)W.push(`Taux horaire : ${eur2(r.taux_horaire_brut)} sur la fiche, ${eur2(match.taux)} prévu pour la mission.`);
+  if(match&&+match.taux>0&&r.taux_horaire_brut&&Math.abs(match.taux-r.taux_horaire_brut)>0.005)W.push(`Taux horaire : ${eurT(r.taux_horaire_brut)} sur la fiche, ${eurT(match.taux)} prévu pour la mission.`);
   if(r.periode_debut&&r.periode_fin){const pt=S.pointage.filter(x=>x.date>=r.periode_debut&&x.date<=r.periode_fin&&(!match||!x.mission||x.mission===match.id));
-    if(pt.length&&r.heures){const hp=sum(pt,x=>x.heures);if(Math.abs(hp-r.heures)>0.25)W.push(hp>r.heures?`Heures : tu as pointé ${hp} h mais seulement ${r.heures} h sont payées — il manquerait ${hp-r.heures} h ! Vérifie avec ton agence.`:`Heures : ${r.heures} h payées pour ${hp} h pointées (ton pointage est peut-être incomplet).`)}}
-  if(r.heures&&r.taux_horaire_brut){const g=(r.lignes||[]).find(l=>l.type==="gain"&&/heure/i.test(l.libelle));if(g&&Math.abs(g.montant-r.heures*r.taux_horaire_brut)>1)W.push(`Calcul des heures : ${r.heures} h × ${eur2(r.taux_horaire_brut)} = ${eur2(r.heures*r.taux_horaire_brut)}, mais la fiche indique ${eur2(g.montant)}.`)}
+    if(pt.length&&r.heures){const hp=sum(pt,x=>x.heures);if(Math.abs(hp-r.heures)>0.25)W.push(hp>r.heures?`Heures : tu as pointé ${fmtN(hp)} h mais seulement ${fmtN(r.heures)} h sont payées — il manquerait ${fmtN(hp-r.heures)} h ! Vérifie avec ton agence.`:`Heures : ${fmtN(r.heures)} h payées pour ${fmtN(hp)} h pointées (ton pointage est peut-être incomplet).`)}}
+  if(r.heures&&r.taux_horaire_brut){const g=(r.lignes||[]).find(l=>l.type==="gain"&&/heure/i.test(l.libelle));if(g&&Math.abs(g.montant-r.heures*r.taux_horaire_brut)>1)W.push(`Calcul des heures : ${fmtN(r.heures)} h × ${eurT(r.taux_horaire_brut)} = ${eur2(r.heures*r.taux_horaire_brut)}, mais la fiche indique ${eur2(g.montant)}.`)}
   if(r.brut&&r.net&&(r.net/r.brut<0.6||r.net/r.brut>1.05))W.push(`Le net représente ${Math.round(r.net/r.brut*100)} % du brut : c'est inhabituel, vérifie les retenues.`);
-  if(r.jours.length&&r.heures){const hj=sum(r.jours,j=>j.heures);if(Math.abs(hj-r.heures)>0.25)W.push(`Le détail des jours fait ${hj} h, mais ${r.heures} h sont payées.`)}
+  if(r.jours.length&&r.heures){const hj=sum(r.jours,j=>j.heures);if(Math.abs(hj-r.heures)>0.25)W.push(`Le détail des jours fait ${fmtN(hj)} h, mais ${fmtN(r.heures)} h sont payées.`)}
   const newDays=r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date));
   const ctrl=W.length?`<div class="warnbox"><b>⚠️ À vérifier</b><br>${W.join("<br>")}</div>`:(r.heures||r.taux_horaire_brut)?`<div class="okbox">✅ Fiche cohérente : heures, taux et montants concordent.</div>`:"";
   openRaw(`<h3>Ta fiche de paie <button class="del" data-close>×</button></h3>${ctrl}${detailHTML(r)}
@@ -818,7 +843,7 @@ function showScan(r){
     <div class="two"><label>Net à enregistrer (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${r.net??""}"></label><label>Date<input name="date" type="date" required value="${esc(date)}"></label></div>
     <label>Mission<select name="mission"><option value="">— Aucune —</option>${r.agence&&!match?`<option value="__new" selected>➕ Créer « ${esc(r.agence)}${r.client?" · "+esc(r.client):""} »</option>`:""}${S.missions.map(m=>`<option value="${m.id}" ${match&&match.id===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("")}</select></label>
     <label class="chk"><input type="checkbox" name="recu" checked> Déjà reçue sur mon compte</label>
-    ${newDays.length?`<label class="chk"><input type="checkbox" name="pointer" checked> Ajouter ${newDays.length} jour(s) au pointage (${sum(newDays,j=>j.heures)} h)</label>`:""}
+    ${newDays.length?`<label class="chk"><input type="checkbox" name="pointer" checked> Ajouter ${newDays.length} jour(s) au pointage (${fmtN(sum(newDays,j=>j.heures))} h)</label>`:""}
     ${r.cheques_repas_nombre?`<label class="chk"><input type="checkbox" name="crAdd" checked> Ajouter ${r.cheques_repas_nombre} chèque(s)-repas${r.cheques_repas_valeur?" de "+eur2(r.cheques_repas_valeur):""}</label>`:""}
     ${ratio&&ratio>30&&ratio<100?`<label class="chk"><input type="checkbox" name="ratio" ${Math.abs(ratio-S.reglages.ratio)>=2?"checked":""}> Utiliser ce ratio net/brut (${ratio} %) pour mes estimations</label>`:""}
     <button class="btn">Enregistrer la paie</button></form>`);
@@ -948,7 +973,9 @@ $("viewerClose").onclick=()=>$("viewer").classList.remove("open");
 $("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render()};
 $("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render()};
 $("bCopy").onclick=async()=>{LS.set("lastBackup",Date.now());renderSettings();const t=JSON.stringify(S);$("backup").value=t;try{await navigator.clipboard.writeText(t);toast("Copié")}catch(e){$("backup").select();toast("Sélectionné, copie-le")}};
-$("bRestore").onclick=()=>{try{const d=JSON.parse($("backup").value);if(!d||typeof d!=="object")throw 0;S=normalize(d);save();$("backup").value="";toast("Données restaurées")}catch(e){toast("Sauvegarde invalide")}};
+$("bRestore").onclick=()=>{const b=$("bRestore");let d;try{d=JSON.parse($("backup").value);if(!d||typeof d!=="object"||Array.isArray(d))throw 0}catch(e){toast("Sauvegarde invalide");return}
+  if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="⚠ Remplacer TOUT ? Appuie encore";setTimeout(()=>{b.dataset.confirm="";b.textContent="Restaurer"},3500);return}
+  b.dataset.confirm="";b.textContent="Restaurer";S=normalize(d);save();$("backup").value="";toast("Données restaurées")};
 
 $("bDownload").onclick=()=>{LS.set("lastBackup",Date.now());renderSettings();const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));a.download="budget-interim-"+today()+".json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};
 init();
