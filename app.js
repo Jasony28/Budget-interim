@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=18";
+import * as CFG from "./firebase-config.js?v=19";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=18;
+const APP_VERSION=19;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -137,9 +137,10 @@ function monthData(k){
   const all=S.depenses.filter(x=>(x.date||"").startsWith(k));
   const d=all.filter(x=>!(x.fixe&&S.fixes.some(f=>f.id===x.fixe))); // une facture liée à une charge fixe (toujours existante) est déjà comptée dans les fixes
   const var_=d.reduce((a,x)=>a+(+x.montant||0),0);
-  return{p,pAll,arch,recu,att,d,all,var_,fix:fixesTotal(),dep:var_+fixesTotal()};
+  const autre=p.filter(x=>x.autre&&x.recu).reduce((a,x)=>a+(+x.montant||0),0);
+  return{p,pAll,arch,recu,att,autre,d,all,var_,fix:fixesTotal(),dep:var_+fixesTotal()};
 }
-function missionPaid(m){return S.paies.filter(p=>p.mission===m.id&&p.recu).reduce((a,p)=>a+(+p.montant||0),0)}
+function missionPaid(m){return S.paies.filter(p=>p.mission===m.id&&p.recu&&!p.autre).reduce((a,p)=>a+(+p.montant||0),0)}
 function daysTo(s){return Math.ceil((new Date(s+"T23:59")-new Date())/864e5)}
 const sum=(a,f)=>a.reduce((t,x)=>t+(+f(x)||0),0);
 function netHoraire(){
@@ -170,7 +171,8 @@ function render(){
   $("resteCard").classList.toggle("neg",reste<0);
   $("resteSub").textContent=M.att>0?`dont ${eur(M.att)} de paies encore attendues`:"revenus − charges fixes − dépenses";
   $("recu").textContent=eur(M.recu);
-  $("attendu").textContent=M.att>0?`+ ${eur(M.att)} attendus`:`${M.p.length} paie(s)`;
+  const nP=M.p.filter(x=>!x.autre).length;
+  $("attendu").textContent=[M.autre>0?`dont ${eur(M.autre)} d'autres rentrées`:`${nP} paie(s)`,M.att>0?`+ ${eur(M.att)} attendus`:""].filter(Boolean).join(" · ");
   $("dep").textContent=eur(M.dep);
   $("depSub").textContent=`${eur(M.fix)} fixes · ${eur(M.var_)} variables`;
 
@@ -241,7 +243,7 @@ function render(){
   // paies
   const pm=[...M.pAll].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
-    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||"Paie"))}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
+    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${p.autre?"💰 ":""}${esc(m?(m.client||m.agence):(p.note||(p.autre?"Rentrée":"Paie")))}${p.autre?'<span class="pill">rentrée</span>':""}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
     `<span class="amt ${p.archive?"":p.recu?"pos":"pend"}" ${p.archive?"":`data-toggle="${p.id}"`} style="cursor:pointer;${p.archive?"color:var(--mut)":""}">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`)}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:`<div class="empty">Aucune paie ce mois</div>`;
 
   // fixes
@@ -265,7 +267,7 @@ function render(){
 
 function renderStats(){
   const y=String(cur.getFullYear()), R=S.reglages;
-  const P=S.paies.filter(p=>(p.date||"").startsWith(y)), D=S.depenses.filter(d=>(d.date||"").startsWith(y)&&!(d.fixe&&S.fixes.some(f=>f.id===d.fixe)));
+  const P=S.paies.filter(p=>!p.autre&&(p.date||"").startsWith(y)), D=S.depenses.filter(d=>(d.date||"").startsWith(y)&&!(d.fixe&&S.fixes.some(f=>f.id===d.fixe)));
   const net=sum(P,p=>p.montant), h=sum(P,p=>p.heures), fx=fixesTotal();
   const moisActifs=new Set([...P,...D].map(x=>x.date.slice(0,7)));
   const nbM=Math.max(1,moisActifs.size);
@@ -311,7 +313,7 @@ function feries(y){const p=paques(y),add=n=>{const d=new Date(p);d.setDate(d.get
   return {[y+"-01-01"]:"Nouvel An",[add(1)]:"Lundi de Pâques",[y+"-05-01"]:"Fête du Travail",[add(39)]:"Ascension",[add(50)]:"Lundi de Pentecôte",[y+"-07-21"]:"Fête nationale",[y+"-08-15"]:"Assomption",[y+"-11-01"]:"Toussaint",[y+"-11-11"]:"Armistice",[y+"-12-25"]:"Noël"}}
 const brutDe=p=>(p.detail&&+p.detail.brut)||(+p.montant||0)/((+S.reglages.ratio||78)/100);
 function periodeStats(a,b){ // a,b = "YYYY-MM-DD" inclus
-  const P=S.paies.filter(p=>p.date>=a&&p.date<=b), T=S.pointage.filter(x=>x.date>=a&&x.date<=b&&+x.heures>0);
+  const P=S.paies.filter(p=>!p.autre&&p.date>=a&&p.date<=b), T=S.pointage.filter(x=>x.date>=a&&x.date<=b&&+x.heures>0);
   const brut=sum(P,brutDe), hP=sum(P,p=>p.heures), hT=sum(T,x=>x.heures);
   const jours=T.length?new Set(T.map(x=>x.date)).size:Math.round(hP/7.6);
   return{brut,heures:Math.max(hP,hT),jours,estime:!T.length,nbPaies:P.length};
@@ -484,7 +486,7 @@ function resumeDonnees(){
   const ms=[];for(let i=0;i<6;i++){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-i);const k=mkey(d),x=monthData(k),c={};x.d.forEach(e=>c[e.cat]=(c[e.cat]||0)+(+e.montant||0));
     ms.push(`${k} : revenus ${eur(x.recu+x.att)}, dépenses variables ${eur(x.var_)} [${Object.entries(c).map(([n,v])=>n+" "+eur(v)).join(", ")}]`)}
   L.push("Par mois (revenus = argent disponible, hors anciennes fiches d'historique) :\n"+ms.join("\n"));
-  const tx=[...S.paies.map(p=>`${p.date};PAIE${p.archive?" (historique, argent déjà dépensé)":""};+${p.montant};${p.heures||""}h`),...S.depenses.map(d=>`${d.date};DEPENSE;-${d.montant};${d.cat};${(d.note||"").slice(0,30)}${d.paye===false?";À PAYER":""}`)].sort().reverse().slice(0,250);
+  const tx=[...S.paies.map(p=>`${p.date};${p.autre?"AUTRE RENTREE":"PAIE"}${p.archive?" (historique, argent déjà dépensé)":""};+${p.montant};${p.heures||""}h`),...S.depenses.map(d=>`${d.date};DEPENSE;-${d.montant};${d.cat};${(d.note||"").slice(0,30)}${d.paye===false?";À PAYER":""}`)].sort().reverse().slice(0,250);
   L.push("Transactions récentes (date;type;montant;catégorie;note) :\n"+tx.join("\n"));
   if(S.dettes.some(x=>!x.regle))L.push("Dettes : "+S.dettes.filter(x=>!x.regle).map(x=>`${x.personne} ${x.sens==="du"?"me doit":"je dois"} ${eur2(x.montant)}`).join(", "));
   return L.join("\n");
@@ -876,11 +878,11 @@ async function importCSV(f){
   afficherReleve(`${releveRes.length} opération(s) importée(s) du fichier`);
 }
 function afficherReleve(titre){
-  const nSel=releveRes.filter(o=>!o.dup&&!o.interne&&(o.montant<0||o.salaire)).length;
+  const nSel=releveRes.filter(o=>!o.dup&&!o.interne).length;
   openRaw(`<h3>${esc(titre)} <button class="del" data-close>×</button></h3>
-    <p class="sub" style="margin-bottom:6px">Coché par défaut : ${nSel} opération(s). Décochés : doublons, virements entre tes propres comptes (épargne…) et entrées qui ne sont pas des paies.</p>
+    <p class="sub" style="margin-bottom:6px">Coché par défaut : ${nSel} opération(s). Décochés : doublons et virements entre tes propres comptes (épargne…). Les autres entrées (remboursements, virements de proches…) comptent comme « autres rentrées ».</p>
     <div class="chips" style="margin-bottom:6px"><button type="button" data-relper="0">Ce mois-ci</button><button type="button" data-relper="3">3 derniers mois</button><button type="button" data-relper="12">Tout</button><button type="button" data-relall="0">Rien</button></div>
-    <form data-f="releve">${releveRes.map((o,i)=>`<div class="chk-row"><input type="checkbox" name="o${i}" ${!o.dup&&!o.interne&&(o.montant<0||o.salaire)?"checked":""}><div class="l"><b>${esc(o.libelle)}</b><small>${fmtD(o.date)} ${o.date.slice(0,4)} · ${o.interne?"🔄 virement entre tes comptes":o.montant>0?(o.salaire?"💶 paie":"entrée"):esc(o.cat)}${o.dup?" · déjà présent":""}</small></div><b class="${o.montant<0?"out":"pos"}">${o.montant>0?"+":""}${eur2(o.montant)}</b></div>`).join("")}
+    <form data-f="releve">${releveRes.map((o,i)=>`<div class="chk-row"><input type="checkbox" name="o${i}" ${!o.dup&&!o.interne?"checked":""}><div class="l"><b>${esc(o.libelle)}</b><small>${fmtD(o.date)} ${o.date.slice(0,4)} · ${o.interne?"🔄 virement entre tes comptes":o.montant>0?(o.salaire?"💶 paie":"💰 autre rentrée"):esc(o.cat)}${o.dup?" · déjà présent":""}</small></div><b class="${o.montant<0?"out":"pos"}">${o.montant>0?"+":""}${eur2(o.montant)}</b></div>`).join("")}
     <label class="chk" style="margin-top:8px"><input type="checkbox" name="anciennes" checked> Les paies d'avant ce mois-ci vont dans l'historique 📚 (hors budget)</label>
     <button class="btn" style="margin-top:10px">Importer la sélection</button></form>`)}
 
@@ -892,7 +894,7 @@ function qualite(p){ // plus c'est haut, plus la paie est fiable à garder
   const m=S.missions.find(x=>x.id===p.mission),d=p.detail;
   if(d&&+d.brut>0&&+p.heures>0){const t=+d.taux_horaire_brut||(m&&+m.taux)||0;if(t){const h=d.brut/t;q+=Math.max(0,5-Math.abs(h-p.heures))}} // heures cohérentes avec le brut
   return q}
-function trouverDoublons(){const L=[...S.paies].sort((a,b)=>a.date.localeCompare(b.date)),vus=new Set(),G=[];
+function trouverDoublons(){const L=S.paies.filter(p=>!p.autre).sort((a,b)=>a.date.localeCompare(b.date)),vus=new Set(),G=[];
   for(let i=0;i<L.length;i++){if(vus.has(L[i].id))continue;const g=[L[i]];
     for(let j=i+1;j<L.length&&procheJ(L[i].date,L[j].date);j++)if(!vus.has(L[j].id)&&memePaie(L[j],L[i].date,L[i].montant))g.push(L[j]);
     if(g.length>1){g.forEach(x=>vus.add(x.id));g.sort((a,b)=>qualite(b)-qualite(a));G.push(g)}}
@@ -941,6 +943,7 @@ function openSheet(type,ctx,item,opts={}){
     <label>Montant net (€)<input name="montant" id="pM" type="number" step="0.01" inputmode="decimal" required value="${V("montant")}" ${ed?'data-touched="1"':""}></label>
     <label>Note<input name="note" placeholder="ex. semaine 45" value="${V("note")}"></label>
     <label class="chk"><input type="checkbox" name="recu" ${!ed||it.recu?"checked":""}> Déjà reçue sur mon compte</label>
+    <label class="chk"><input type="checkbox" name="autre" ${it.autre?"checked":""}> 💰 Pas une paie (remboursement, virement d'un proche, vente, allocation…)</label>
     <label class="chk"><input type="checkbox" name="archive" ${it.archive?"checked":""}> 📚 Historique seulement (argent déjà dépensé, ne compte pas dans mon budget)</label>
     ${it.detail?`<button type="button" class="btn sec" data-detail="${it.id}">📄 Voir le détail de la fiche</button>`:""}
     ${ed?(it.photo?`<div class="two"><button type="button" class="btn sec" data-photo="${it.photo}">🖼️ Voir la photo</button><button type="button" class="btn sec" data-attach="paies:${it.id}">🔄 Remplacer</button></div>`:`<button type="button" class="btn sec" data-attach="paies:${it.id}">📎 Joindre la fiche (photo / PDF)</button>`):""}
@@ -1276,7 +1279,7 @@ document.addEventListener("submit",e=>{
     multiRes=[];closeSheet();save();toast(n+" dépense(s) ajoutée(s) ✓");return}
   if(t==="releve"&&releveRes.length){let n=0;releveRes.forEach((o,i)=>{if(!f["o"+i]||!f["o"+i].checked)return;
       if(o.montant<0){const dd={id:uid(),montant:Math.abs(o.montant),cat:o.cat,date:o.date,note:o.libelle,paye:true};autoLink(dd);S.depenses.push(dd)}
-      else S.paies.push({id:uid(),mission:(S.missions.find(mi=>mi.agence&&o.libelle.toLowerCase().includes(mi.agence.toLowerCase().split(/[ .]/)[0]))||{}).id||"",date:o.date,montant:o.montant,recu:true,archive:!!(f.anciennes&&f.anciennes.checked&&o.date<mkey(new Date())+"-01"),heures:"",note:o.libelle});n++});
+      else S.paies.push({id:uid(),mission:(!o.salaire?{}:S.missions.find(mi=>mi.agence&&o.libelle.toLowerCase().includes(mi.agence.toLowerCase().split(/[ .]/)[0]))||{}).id||"",date:o.date,montant:o.montant,recu:true,autre:!o.salaire,archive:!!(f.anciennes&&f.anciennes.checked&&o.date<mkey(new Date())+"-01"),heures:"",note:o.libelle});n++});
     releveRes=[];closeSheet();save();toast(n+" opération(s) importée(s) ✓");return}
   if(t==="budgets"){const B={};cats().forEach(c=>{const v=+d["b_"+c];if(v>0)B[c]=v});S.budgets=B;closeSheet();save();toast("Budgets enregistrés");return}
   if(t==="epargne"){const m=Math.abs(+d.montant||0)*(+f.dataset.sign||1);if(!m)return;
@@ -1286,7 +1289,7 @@ document.addEventListener("submit",e=>{
     if(S.epargneLog.length>400)S.epargneLog=S.epargneLog.slice(-400);
     closeSheet();save();toast(m>0?`+${eur2(m)} mis de côté 💪`:`${eur2(m)} retiré`);return}
   // ajout / modification générique
-  const fix={depense:x=>{x.montant=+x.montant;x.paye=!!f.paye.checked;if(x.paye)x.echeance=""},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.archive=!!(f.archive&&f.archive.checked);x.heures=x.heures?+x.heures:""},
+  const fix={depense:x=>{x.montant=+x.montant;x.paye=!!f.paye.checked;if(x.paye)x.echeance=""},paie:x=>{x.montant=+x.montant;x.recu=!!f.recu.checked;x.autre=!!(f.autre&&f.autre.checked);if(x.autre)x.mission="";x.archive=!!(f.archive&&f.archive.checked);x.heures=x.heures?+x.heures:""},
     mission:x=>{x.taux=x.taux?+x.taux:0;x.hsem=x.hsem?+x.hsem:"";x.km=x.km?+x.km:"";x.min=x.min?+x.min:"";const dep=(x._dep||"").trim();if(dep&&dep!==S.reglages.domicile)S.reglages.domicile=dep;delete x._dep},fixe:x=>{x.montant=+x.montant},objectif:x=>{x.cible=+x.cible;x.actuel=+x.actuel||0},
     pointage:x=>{x.heures=+x.heures;delete x.semaine},cheques:x=>{x.nb=+x.nb;x.valeur=+x.valeur;x.used=+x.used||0},dette:x=>{x.montant=+x.montant;x.regle=!!(f.regle&&f.regle.checked)}};
   if(!fix[t])return;
@@ -1337,7 +1340,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.share){routerPartage(b.dataset.share);return}
   if(b.dataset.relall){document.querySelectorAll('#sheet form[data-f="releve"] .chk-row input').forEach(x=>x.checked=b.dataset.relall==="1");return}
   if(b.dataset.relper){const n=+b.dataset.relper,d=new Date();const lim=n?iso(new Date(d.getFullYear(),d.getMonth()-n+1,1)):mkey(d)+"-01";
-    document.querySelectorAll('#sheet form[data-f="releve"] .chk-row input').forEach((x,i)=>{const o=releveRes[i];x.checked=!!o&&(n===12||o.date>=lim)&&!o.dup&&!o.interne&&(o.montant<0||o.salaire)});
+    document.querySelectorAll('#sheet form[data-f="releve"] .chk-row input').forEach((x,i)=>{const o=releveRes[i];x.checked=!!o&&(n===12||o.date>=lim)&&!o.dup&&!o.interne});
     const nb=[...document.querySelectorAll('#sheet form[data-f="releve"] .chk-row input')].filter(x=>x.checked).length;toast(nb+" opération(s) cochée(s)");return}
   if(b.dataset.edit2){const[ty,id]=b.dataset.edit2.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.cdetail){const m=S.missions.find(x=>x.id===b.dataset.cdetail);if(m&&m.contrat)openRaw(`<h3>Contrat <button class="del" data-close>×</button></h3>${contratHTML(m.contrat)}`);return}
