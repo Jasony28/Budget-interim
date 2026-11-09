@@ -603,7 +603,9 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
     </div>
     <h2>Sauvegarde</h2>
     <div class="card">
-      <p class="sub" style="margin-bottom:10px">Tes données sont déjà synchronisées dans ton compte. Tu peux aussi garder une copie : <span id="lastBackup"></span></p>
+      <p class="sub" style="margin-bottom:10px">Tes données sont enregistrées dans ton compte Google (Firebase), et l'appli en garde une copie automatique chaque jour pendant 14 jours.</p>
+      <button class="btn" id="bVersions" style="margin-bottom:14px">🕘 Revenir à une version précédente</button>
+      <p class="sub" style="margin-bottom:10px">Tu peux aussi garder ta propre copie : <span id="lastBackup"></span></p>
       <textarea id="backup" placeholder="Colle une sauvegarde ici…"></textarea>
       <div class="two" style="margin-top:10px">
         <button class="btn sec" id="bCopy">Copier</button>
@@ -616,7 +618,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
       <p class="sub" id="who" style="margin-bottom:10px"></p>
       <button class="btn sec updBtn" style="margin-bottom:10px">↻ Mettre à jour l'appli</button>
       <button class="btn sec" id="bLogout">Se déconnecter</button>
-      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 22</p>
+      <p class="sub" id="verLabel" style="margin-top:10px;text-align:center">Version 23</p>
     </div>
   </section>
 </main>
@@ -638,6 +640,6 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=22"></script>
+<script type="module" src="app.js?v=23"></script>
 </body>
 </html>

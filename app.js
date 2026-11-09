@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=22";
+import * as CFG from "./firebase-config.js?v=23";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=22;
+const APP_VERSION=23;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -58,6 +58,33 @@ function save(){
   if(json.length>1e6){setSync("⚠ Données trop volumineuses");toast("⚠ Base presque pleine : fais une sauvegarde puis supprime d'anciennes données");return}
   setDoc(fsDoc,JSON.parse(json)).catch(e=>{console.error(e);setSync("⚠ Erreur de sauvegarde");toast("⚠ Sauvegarde échouée : "+(e.code||"erreur"))});
 }
+/* ---------- copies de secours automatiques (1 par jour, 14 jours) ----------
+   Rangées dans budgets/{uid}/photos/backup-AAAA-MM-JJ : même règle Firestore que les photos, rien à configurer. */
+const BK_JOURS=14,bkId=d=>"backup-"+d;
+const aDesDonnees=s=>(s.paies||[]).length+(s.depenses||[]).length+(s.missions||[]).length+(s.fixes||[]).length>0;
+function resumeEtat(s){return `${(s.paies||[]).length} paie(s) · ${(s.depenses||[]).length} dépense(s) · ${(s.missions||[]).length} mission(s)`}
+async function autoBackup(){try{
+  if(!curUid||!aDesDonnees(S))return; // jamais de copie d'un état vide
+  const json=compacter();try{localStorage.setItem("bk-local",JSON.stringify({date:today(),data:json}))}catch(e){}
+  const ref=doc(fdb,"budgets",curUid,"photos",bkId(today()));
+  if((await getDoc(ref)).exists())return;
+  await setDoc(ref,{backup:true,date:today(),resume:resumeEtat(S),data:json});
+  for(let i=BK_JOURS;i<BK_JOURS+10;i++){const d=new Date();d.setDate(d.getDate()-i);deleteDoc(doc(fdb,"budgets",curUid,"photos",bkId(iso(d)))).catch(()=>{})}
+}catch(e){console.warn("copie de secours",e)}}
+async function ouvrirVersions(){
+  openRaw(`<h3>Versions automatiques <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Recherche de tes copies de secours…</div>`);
+  const jours=[...Array(BK_JOURS+1).keys()].map(i=>{const d=new Date();d.setDate(d.getDate()-i);return iso(d)});
+  const res=(await Promise.all(jours.map(d=>getDoc(doc(fdb,"budgets",curUid,"photos",bkId(d))).then(s=>s.exists()?s.data():null).catch(()=>null)))).filter(Boolean);
+  let loc=null;try{loc=JSON.parse(localStorage.getItem("bk-local")||"null")}catch(e){}
+  window.__versions=res;window.__vloc=loc;
+  $("sheet").innerHTML=`<h3>Versions automatiques <button class="del" data-close>×</button></h3>
+   <p class="sub" style="margin-bottom:12px">L'appli garde une copie de tes données chaque jour pendant ${BK_JOURS} jours, dans ton compte Firebase. Touche une date pour revenir à cette version.</p>
+   <div class="card" style="background:var(--card2)">${res.length?res.map((v,i)=>row("",`<b>${new Date(v.date+"T12:00").toLocaleDateString("fr-BE",{weekday:"long",day:"numeric",month:"long"})}</b><small>${esc(v.resume||"")}</small>`,`<button type="button" class="btn sm" data-version="${i}">Restaurer</button>`,"🕘")).join(""):vide("🕘","Pas encore de copie : la première se fait automatiquement aujourd'hui.")}
+   ${loc&&loc.data?row("",`<b>Copie sur ce téléphone</b><small>${esc(new Date(loc.date+"T12:00").toLocaleDateString("fr-BE"))}</small>`,`<button type="button" class="btn sec sm" data-version="local">Restaurer</button>`,"📱"):""}</div>`}
+function restaurerVersion(k){const v=k==="local"?window.__vloc:(window.__versions||[])[+k];if(!v||!v.data)return;
+  let d;try{d=normalize(JSON.parse(v.data))}catch(e){toast("Copie illisible");return}
+  if(!confirm(`Revenir à la version du ${new Date(v.date+"T12:00").toLocaleDateString("fr-BE")} ?\n(${resumeEtat(d)})\n\nTes données actuelles seront remplacées. Une copie d'aujourd'hui reste disponible.`))return;
+  S=d;save();closeSheet();toast("Version restaurée ✓")}
 function subscribe(uid){
   fsDoc=doc(fdb,"budgets",uid);curUid=uid;loaded=false;
   setSync("Chargement…");
@@ -65,6 +92,7 @@ function subscribe(uid){
     const m=snap.metadata;
     if(!m.hasPendingWrites&&snap.exists())S=normalize(snap.data());
     if(!m.hasPendingWrites&&(snap.exists()||!m.fromCache))loaded=true; // jamais d'écriture avant d'avoir lu les vraies données
+    if(loaded&&snap.exists()&&!m.fromCache&&!m.hasPendingWrites&&!window.__bk){window.__bk=1;setTimeout(autoBackup,2500)}
     setSync(m.hasPendingWrites?(navigator.onLine?"Sauvegarde…":"Hors ligne · enregistré sur le téléphone"):m.fromCache?"Hors ligne":"✓ Synchronisé");
     render();
     hideSplash();
@@ -1424,6 +1452,8 @@ document.addEventListener("click",e=>{
     $("agCopy").onclick=async()=>{try{await navigator.clipboard.writeText($("agTxt").value);toast("Message copié ✓")}catch(e){$("agTxt").select();document.execCommand("copy");toast("Message copié ✓")}};
     $("agShare").onclick=async()=>{const t=$("agTxt").value;if(navigator.share){try{await navigator.share({title:"Ma fiche de paie",text:t})}catch(e){}}else{location.href="mailto:?subject="+encodeURIComponent("Question sur ma fiche de paie")+"&body="+encodeURIComponent(t)}};return}
   if(b.dataset.ctrlvu){const p=S.paies.find(x=>x.id===b.dataset.ctrlvu);if(p){p.ctrlVu=true;save();closeSheet();toast("Noté, paie marquée comme vérifiée ✓")}return}
+  if(b.dataset.version){restaurerVersion(b.dataset.version);return}
+  if(b.id==="bVersions"){ouvrirVersions();return}
   if(b.dataset.moreal){alertsAll=true;render();return}
   if(b.dataset.go==="releve"){closeSheet();$("bReleve").click();return}
   if(b.dataset.acc){const d=$("acc-"+b.dataset.acc);if(d){d.open=true;setTimeout(()=>d.scrollIntoView({behavior:"smooth",block:"start"}),30)}return}
