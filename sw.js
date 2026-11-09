@@ -1,7 +1,7 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données, elles, sont gérées hors ligne par Firestore.
-const CACHE = "budget-interim-v16";
-const FILES = ["./", "./index.html", "./app.js?v=16", "./firebase-config.js?v=16", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
+const CACHE = "budget-interim-v17";
+const FILES = ["./", "./index.html", "./app.js?v=17", "./firebase-config.js?v=17", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=16";
+import * as CFG from "./firebase-config.js?v=17";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=16;
+const APP_VERSION=17;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -129,10 +129,11 @@ if("serviceWorker" in navigator){const had=!!navigator.serviceWorker.controller;
 /* ---------- calculs ---------- */
 const fixesTotal=()=>S.fixes.reduce((a,f)=>a+(+f.montant||0),0);
 function monthData(k){
-  const pAll=S.paies.filter(x=>(x.date||"").startsWith(k)),p=pAll.filter(x=>!x.archive); // fiche « historique » : compte pour les droits et stats, pas comme argent disponible
+  const passe=k<mkey(new Date()); // mois terminé : son bilan inclut toutes ses paies, historique compris
+  const pAll=S.paies.filter(x=>(x.date||"").startsWith(k)),p=passe?pAll:pAll.filter(x=>!x.archive); // mois en cours : une fiche « historique » ne compte pas comme argent disponible
   const recu=p.filter(x=>x.recu).reduce((a,x)=>a+(+x.montant||0),0);
   const att=p.filter(x=>!x.recu).reduce((a,x)=>a+(+x.montant||0),0);
-  const arch=pAll.filter(x=>x.archive).reduce((a,x)=>a+(+x.montant||0),0);
+  const arch=passe?0:pAll.filter(x=>x.archive).reduce((a,x)=>a+(+x.montant||0),0);
   const all=S.depenses.filter(x=>(x.date||"").startsWith(k));
   const d=all.filter(x=>!(x.fixe&&S.fixes.some(f=>f.id===x.fixe))); // une facture liée à une charge fixe (toujours existante) est déjà comptée dans les fixes
   const var_=d.reduce((a,x)=>a+(+x.montant||0),0);
@@ -161,6 +162,8 @@ const row=(edit,left,right)=>`<div class="row"><div class="l" data-edit="${edit}
 function render(){
   const k=mkey(cur), t=today(), isNow=k===mkey(new Date());
   $("mlabel").textContent=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
+  $("bToday").hidden=isNow;$("bToday").textContent="↩ Revenir à "+new Date().toLocaleDateString("fr-BE",{month:"long"});
+  $("resteCard").querySelector(".k").textContent=isNow?"Reste à vivre ce mois":"Bilan de "+cur.toLocaleDateString("fr-BE",{month:"long"});
   const M=monthData(k), R=S.reglages, fx=fixesTotal();
   const reste=M.recu+M.att-M.dep;
   $("reste").textContent=eur(reste);
@@ -833,13 +836,16 @@ function lireCSVBanque(txt){const rows=parseCSV(txt);
   if(hi<0)throw new Error("Colonnes non reconnues (il faut au moins une date et un montant).");
   const H=rows[hi].map(nrm),col=(...re)=>{for(const r of re){const i=H.findIndex(h=>r.test(h));if(i>=0)return i}return -1};
   const cD=col(/^date$/,/date (d.)?execution|date comptable|boekingsdatum|uitvoeringsdatum/,/^datum/,/date/),cM=col(/^montant$/,/^bedrag$/,/^amount$/,/montant|bedrag/),cDeb=col(/debit/),cCre=col(/credit/);
+  const cH=H.findIndex(h=>/^nom$|^naam$|titulaire|^name$/.test(h)),cCpte=col(/^numero de compte$|^compte$|^rekeningnummer$|^account$/),cCp=col(/compte contrepartie|rekening tegenpartij|numero de compte contrepartie|iban contrepartie/);
   const cN=col(/nom (de la )?contrepartie|naam (van de )?tegenpartij|beneficiaire|counterparty/),cL=col(/^description$/,/omschrijving|libelle|description/),cC=col(/communication libre/,/vrije mededeling/,/^communication$/,/^mededeling$/,/communication/,/mededeling/);
   const out=[];
   for(const r of rows.slice(hi+1)){const date=parseDateFR(r[cD]);let m=cM>=0?parseMontant(r[cM]):NaN;
     if(isNaN(m)&&(cDeb>=0||cCre>=0)){const d=parseMontant(r[cDeb]),c=parseMontant(r[cCre]);m=(isNaN(c)?0:Math.abs(c))-(isNaN(d)?0:Math.abs(d))}
     if(!date||isNaN(m)||!m)continue;
     const lib=[r[cN],cN<0?r[cL]:"",(!r[cN]&&cL>=0)?r[cL]:"",(!r[cN]&&!r[cL])?r[cC]:""].map(x=>String(x||"").trim()).filter(Boolean)[0]||String(r[cL]||r[cC]||"Opération").trim();
-    out.push({date,montant:Math.round(m*100)/100,libelle:lib.replace(/\s+/g," ").slice(0,50),texte:[r[cN],r[cL],r[cC]].join(" ")})}
+    const tit=nrm(r[cH]),cp=nrm(r[cN]),cpte=String(r[cCpte]||"").replace(/\s/g,""),cpCpte=String(r[cCp]||"").replace(/\s/g,""),txt=nrm([r[cN],r[cL],r[cC]].join(" "));
+    const interne=(tit&&cp&&(cp.includes(tit)||tit.includes(cp)))||(cpte&&cpCpte&&cpte===cpCpte)||/epargne|spaarrekening|compte d.epargne|livret|vers (mon|votre) compte|virement interne|eigen rekening/.test(txt);
+    out.push({date,montant:Math.round(m*100)/100,libelle:lib.replace(/\s+/g," ").slice(0,50),texte:[r[cN],r[cL],r[cC]].join(" "),interne})}
   if(!out.length)throw new Error("Aucune opération trouvée dans ce fichier.");return out}
 const MOTS_CAT=[[/delhaize|colruyt|aldi|lidl|carrefour|intermarche|spar|okay|match|proxy|albert heijn|cora|super/,"Courses"],[/total|shell|esso|q8|texaco|lukoil|dats|gabriels|octa|power|maes|station/,"Carburant"],[/sncb|nmbs|stib|mivb|tec|de lijn|parking|uber|bolt|indigo|peage|bebat/,"Transport"],[/quick|mcdo|mcdonald|burger|kfc|pizza|resto|restaurant|cafe|brasserie|deliveroo|uber eats|takeaway|snack|friterie/,"Resto"],[/pharma|apotheek|medecin|mutualite|mutualiteit|hopital|dentiste|kine/,"Santé"],[/proximus|orange|telenet|base|voo|scarlet|engie|luminus|totalenergies|eneco|vivaqua|swde|loyer|ikea|brico|gamma|hubo|action/,"Maison"],[/zara|h&m|primark|c&a|kiabi|jbc|decathlon|zalando|vinted/,"Vêtements"],[/netflix|spotify|disney|cinema|kinepolis|steam|playstation|xbox|basic.?fit|jims|fitness/,"Loisirs"]];
 function catDevine(t){t=nrm(t);for(const [re,c] of MOTS_CAT)if(re.test(t)&&cats().includes(c))return c;return cats().includes("Autre")?"Autre":cats()[cats().length-1]}
@@ -851,7 +857,7 @@ async function importCSV(f){
   releveRes=ops.map(o=>{const m=o.montant,lib=o.libelle;
     const dup=m<0?S.depenses.some(d=>near(d.date,o.date,3)&&Math.abs(+d.montant-Math.abs(m))<0.01):S.paies.some(p=>near(p.date,o.date,7)&&Math.abs(+p.montant-m)<0.01);
     const ag=S.missions.some(mi=>mi.agence&&nrm(o.texte).includes(nrm(mi.agence).split(/[ .]/)[0]))||/salaire|loon|wedde|interim|randstad|adecco|manpower|start people|asap|tempo.?team|accent|daoust|synergie|unique|trace/.test(nrm(o.texte));
-    return{date:o.date,libelle:lib,montant:m,cat:catDevine(o.texte),salaire:m>0&&ag,dup}});
+    return{date:o.date,libelle:lib,montant:m,cat:catDevine(o.texte),salaire:m>0&&ag&&!o.interne,dup,interne:!!o.interne}});
   // catégories affinées par l'IA si disponible (libellés seulement, sans numéros de compte)
   if(textModel&&model){try{$("sheet").querySelector(".est").innerHTML=`<span class="spin"></span>${releveRes.length} opérations · je classe les dépenses…`;
     const dep=releveRes.map((o,i)=>[i,o]).filter(([,o])=>o.montant<0).slice(0,200);
@@ -860,11 +866,11 @@ async function importCSV(f){
   afficherReleve(`${releveRes.length} opération(s) importée(s) du fichier`);
 }
 function afficherReleve(titre){
-  const nSel=releveRes.filter(o=>!o.dup&&(o.montant<0||o.salaire)).length;
+  const nSel=releveRes.filter(o=>!o.dup&&!o.interne&&(o.montant<0||o.salaire)).length;
   openRaw(`<h3>${esc(titre)} <button class="del" data-close>×</button></h3>
-    <p class="sub" style="margin-bottom:6px">Coché par défaut : ${nSel} opération(s). Les doublons (déjà dans l'appli) et les entrées qui ne sont pas des paies sont décochés.</p>
+    <p class="sub" style="margin-bottom:6px">Coché par défaut : ${nSel} opération(s). Décochés : doublons, virements entre tes propres comptes (épargne…) et entrées qui ne sont pas des paies.</p>
     <div class="two" style="margin-bottom:6px"><button type="button" class="btn sec sm" data-relall="1">Tout cocher</button><button type="button" class="btn sec sm" data-relall="0">Tout décocher</button></div>
-    <form data-f="releve">${releveRes.map((o,i)=>`<div class="chk-row"><input type="checkbox" name="o${i}" ${!o.dup&&(o.montant<0||o.salaire)?"checked":""}><div class="l"><b>${esc(o.libelle)}</b><small>${fmtD(o.date)} ${o.date.slice(0,4)} · ${o.montant>0?(o.salaire?"💶 paie":"entrée"):esc(o.cat)}${o.dup?" · déjà présent":""}</small></div><b class="${o.montant<0?"out":"pos"}">${o.montant>0?"+":""}${eur2(o.montant)}</b></div>`).join("")}
+    <form data-f="releve">${releveRes.map((o,i)=>`<div class="chk-row"><input type="checkbox" name="o${i}" ${!o.dup&&!o.interne&&(o.montant<0||o.salaire)?"checked":""}><div class="l"><b>${esc(o.libelle)}</b><small>${fmtD(o.date)} ${o.date.slice(0,4)} · ${o.interne?"🔄 virement entre tes comptes":o.montant>0?(o.salaire?"💶 paie":"entrée"):esc(o.cat)}${o.dup?" · déjà présent":""}</small></div><b class="${o.montant<0?"out":"pos"}">${o.montant>0?"+":""}${eur2(o.montant)}</b></div>`).join("")}
     <label class="chk" style="margin-top:8px"><input type="checkbox" name="anciennes" checked> Les paies d'avant ce mois-ci vont dans l'historique 📚 (hors budget)</label>
     <button class="btn" style="margin-top:10px">Importer la sélection</button></form>`)}
 
@@ -1362,6 +1368,7 @@ async function attachPhoto(target,f){
   if(ph&&o){if(o.photo)delPhoto(o.photo);o.photo=ph;save();toast("Photo jointe ✓")}else toast("Photo trop lourde ou non enregistrée")}
 $("viewerClose").onclick=()=>$("viewer").classList.remove("open");
 
+$("bToday").onclick=()=>{cur=new Date();cur.setDate(1);render();window.scrollTo(0,0)};
 $("prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render()};
 $("next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render()};
 $("bCopy").onclick=async()=>{LS.set("lastBackup",Date.now());renderSettings();const t=JSON.stringify(S);$("backup").value=t;try{await navigator.clipboard.writeText(t);toast("Copié")}catch(e){$("backup").select();toast("Sélectionné, copie-le")}};
