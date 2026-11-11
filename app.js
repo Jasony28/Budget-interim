@@ -3,11 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=29";
+import * as CFG from "./firebase-config.js?v=30";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=30";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=29;
+const APP_VERSION=30;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -216,7 +217,6 @@ function monthData(k){
 }
 function missionPaid(m){return S.paies.filter(p=>p.mission===m.id&&p.recu&&!p.autre).reduce((a,p)=>a+(+p.montant||0),0)}
 function daysTo(s){return Math.ceil((new Date(s+"T23:59")-new Date())/864e5)}
-const sum=(a,f)=>a.reduce((t,x)=>t+(+f(x)||0),0);
 function netHoraire(){
   const p=S.paies.filter(x=>+x.heures>0&&+x.montant>0);
   const h=sum(p,x=>x.heures);
@@ -360,79 +360,11 @@ function render(){
 }
 
 /* ---------- bilan fiscal de l'année (ONSS, précompte, impôt estimé) ---------- */
-// Paramètres IPP revenus 2025 (exercice 2026). Revalorisés chaque année d'environ 2 % : l'estimation reste proche.
-const IPP={tranches:[[16320,.25],[28800,.40],[49840,.45],[Infinity,.50]],quotite:10910,fraisPct:.30,fraisMax:5930,
-  enfants:[0,1980,5110,11440,18510],enfantSuivant:7070,   // supplément de quotité exemptée (cumulé) pour 0, 1, 2, 3, 4 enfants, puis par enfant en plus
-  parentSeul:1980, enfantMoins3:750, quotientPct:.30, quotientMax:13470,
-  // plafond de ressources nettes pour rester à charge de ses parents (approximatif, revenus 2025) : parents ensemble / parent seul
-  chargeParents:3950, chargeParentSeul:5700,
-  // bonus à l'emploi fiscal = réduction d'impôt de 33,14 % du bonus à l'emploi social (volet A ; 52,54 % pour le volet B), plafonnée (approximatif)
-  bonusFiscPct:.3314, bonusFiscMax:1120};
-function bareme(r){let prev=0,t=0;for(const[lim,taux]of IPP.tranches){if(r>prev)t+=(Math.min(r,lim)-prev)*taux;prev=lim}return t}
-const fraisForf=imp=>Math.min(Math.max(0,imp)*IPP.fraisPct,IPP.fraisMax);
-function supplEnfants(n){n=Math.max(0,Math.floor(+n||0));return n<=4?IPP.enfants[n]:IPP.enfants[4]+(n-4)*IPP.enfantSuivant}
-/** Impôt d'une personne : barème sur le revenu net, moins l'impôt sur sa quotité exemptée (limitée au revenu). */
-function impotPersonne(net,quotite){return Math.max(0,bareme(net)-bareme(Math.min(net,quotite)))}
-/**
- * Impôt du foyer. R = situation : fiscSit "isole" | "couple", fiscEnf (enfants à charge), fiscEnf3 (dont moins de 3 ans),
- * fiscConj (brut imposable annuel du conjoint, après ONSS), fiscCommune (taxe communale en %).
- */
-function impotBelge(imposable,R={},bonusSocial=0){
-  const couple=R.fiscSit==="couple", nEnf=Math.max(0,+R.fiscEnf||0), n3=Math.min(nEnf,Math.max(0,+R.fiscEnf3||0));
-  const communal=(R.fiscCommune===""||R.fiscCommune==null?7:+R.fiscCommune)/100;
-  const frais=fraisForf(imposable);let net=Math.max(0,imposable-frais);
-  const conjImp=couple?Math.max(0,+R.fiscConj||0):0, fraisC=fraisForf(conjImp);let netC=Math.max(0,conjImp-fraisC);
-  // quotient conjugal : le conjoint qui gagne le moins reçoit jusqu'à 30 % des revenus du couple (plafonné)
-  let quotient=0;
-  if(couple){const tot=net+netC,bas=Math.min(net,netC);quotient=Math.max(0,Math.min(IPP.quotientPct*tot-bas,IPP.quotientMax));
-    if(quotient){if(net>=netC){net-=quotient;netC+=quotient}else{netC-=quotient;net+=quotient}}}
-  // suppléments pour enfants (+ parent seul) : au conjoint qui a le plus de revenus
-  const suppl=supplEnfants(nEnf)+n3*IPP.enfantMoins3+(!couple&&nEnf?IPP.parentSeul:0);
-  const moiPlus=!couple||net>=netC;
-  const qMoi=IPP.quotite+(moiPlus?suppl:0), qConj=IPP.quotite+(moiPlus?0:suppl);
-  let tMoi=impotPersonne(net,qMoi);const tConj=couple?impotPersonne(netC,qConj):0;
-  const bonusFisc=Math.min(Math.max(0,+bonusSocial||0)*IPP.bonusFiscPct,IPP.bonusFiscMax,tMoi);tMoi-=bonusFisc;
-  const base=tMoi+tConj;
-  // supplément de quotité non utilisé faute de revenus (crédit d'impôt remboursable pour enfants, non calculé ici)
-  const perdu=suppl&&((moiPlus?net:netC)<(moiPlus?qMoi:qConj));
-  return {frais,fraisC,net:Math.max(0,imposable-frais),netC:couple?Math.max(0,conjImp-fraisC):0,quotient,suppl,base,communal:base*communal,communalPct:communal,total:base*(1+communal),couple,nEnf,perdu,bonusFisc};
-}
-const RX_ONSS=/onss|rsz|cotis.*(soc|pers)|securite sociale|sec\.? ?soc/, RX_PP=/precompte|voorheffing|bedrijfsvoorh|impot|prof\.? ?voorh/;
-const RX_BONUS=/bonus.{0,6}emploi|werkbonus|bas(ses)? salaires?/;
-function bilanFiscal(y){
-  const R=S.reglages, P=S.paies.filter(p=>!p.autre&&(p.date||"").startsWith(y));
-  const ouv=(R.statut||"ouvrier")==="ouvrier";
-  let brut=0,onss=0,pp=0,net=0,nDet=0,nEst=0,nSans=0,bonusP=0;
-  P.forEach(p=>{net+=+p.montant||0;const d=p.detail;
-    if(!d||!+d.brut){nSans++;return}
-    const L=Array.isArray(d.lignes)?d.lignes:[], ret=L.filter(l=>l.type==="retenue");
-    let on=ret.filter(l=>RX_ONSS.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
-    const pr=ret.filter(l=>RX_PP.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
-    const bl=L.filter(l=>RX_BONUS.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
-    const att=+d.brut*.1307*(ouv?1.08:1);
-    brut+=+d.brut;
-    if(on){
-      if(bl&&on>=att*.97){on=Math.max(0,on-bl);bonusP+=bl}   // ONSS plein + ligne « bonus à l'emploi » à part
-      else if(bl)bonusP+=bl;                                   // ONSS déjà réduit, bonus affiché pour info
-      else if(on<att*.97)bonusP+=att-on;                       // ONSS plus bas que 13,07 % = bonus à l'emploi
-      onss+=on;nDet++}
-    else{onss+=att;nEst++}
-    pp+=pr});
-  // fiches 281.10 de l'année : chiffres officiels, prioritaires sur les fiches de paie
-  const F=(S.fiches281||[]).filter(f=>String(f.annee)===String(y)), src=F.length?"281":"paies";
-  const imposable=src==="281"?sum(F,f=>(+f.remu||0)+(+f.autres||0)):brut-onss;
-  const ppMoi=src==="281"?sum(F,f=>f.pp):pp, bonusSocial=src==="281"?sum(F,f=>f.bonus):bonusP;
-  const ipp=impotBelge(imposable,R,bonusSocial);
-  const ppConj=ipp.couple?Math.max(0,+R.fiscConjPP||0):0;
-  // agences avec des paies cette année mais sans fiche 281.10
-  const mot=x=>nrm(x).replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(w=>w.length>2);
-  const agences=[...new Set(P.map(p=>(S.missions.find(m=>m.id===p.mission)||{}).agence).filter(Boolean))];
-  const manquantes=F.length?agences.filter(a=>!F.some(f=>mot(a).some(w=>mot(f.employeur).includes(w)))):[];
-  return {P,F,src,brut,onss,pp:ppMoi,ppConj,net,nDet,nEst,nSans,imposable,ipp,bonusSocial,manquantes,solde:ppMoi+ppConj-ipp.total};
-}
+// Les règles de calcul (impôt, ONSS, bonus à l'emploi, 281.10) sont dans calculs.js, testées dans tests/.
+function bilanFiscal(y){return bilanAnnee(S,y)}
 /* À charge de ses parents ? ressources nettes = brut imposable − frais professionnels forfaitaires */
 function chargeParentsHTML(b,R,y){
-  const res=Math.max(0,b.imposable-b.ipp.frais), plaf=R.fiscParentSeul?IPP.chargeParentSeul:IPP.chargeParents;
+  const c=chargeParents(b.imposable,!!R.fiscParentSeul), res=c.ressources, plaf=c.plafond;
   const fin=+y<new Date().getFullYear()?"":` (l'année n'est pas finie${b.src==="paies"&&b.nSans?", et les paies non scannées ne sont pas comptées":""})`;
   return res>plaf
     ?`<div class="warnbox" style="margin:10px 0 0">👨‍👩‍👦 <b>Tu n'es plus à charge de tes parents pour ${y}</b> : tes ressources nettes (≈ ${eur(res)}) dépassent le plafond d'environ ${eur(plaf)}. Préviens-les : ils ne peuvent plus te déclarer comme enfant à charge, leur impôt va augmenter.</div>`
@@ -578,7 +510,7 @@ function renderOutils(){
   const yS=now.getMonth()>=6?now.getFullYear():now.getFullYear()-1;
   const cA=yS+"-07-01",cB=(yS+1)+"-06-30",pA=(yS-1)+"-07-01",pB=yS+"-06-30";
   const C=periodeStats(cA,cB),P=periodeStats(pA,pB);
-  const bloc=(st,a,b,pay,enCours)=>{const okJ=st.jours>=65,okH=st.heures>=494,ok=okJ||okH,prog=Math.min(100,Math.max(st.jours/65,st.heures/494)*100),pb=st.brut*0.0833;
+  const bloc=(st,a,b,pay,enCours)=>{const pr=primeFinAnnee(st),ok=pr.ok,prog=pr.progression,pb=pr.brut;
     return `<div class="k">${enCours?"Période en cours":"Période terminée"} : ${fmtD(a)} ${a.slice(0,4)} → ${fmtD(b)} ${b.slice(0,4)}</div>
     <div class="top" style="display:flex;justify-content:space-between;margin-top:6px"><b>${st.jours} j${st.estime?"*":""} · ${fmtN(st.heures)} h</b><span class="${ok?"pos":"pend"}" style="font-weight:800">${ok?"✓ Droit ouvert":enCours?`encore ${Math.max(0,65-st.jours)} j ou ${fmtN(Math.max(0,494-st.heures))} h`:"✗ Conditions non atteintes"}</span></div>
     <div class="bar"><i style="width:${prog}%;background:${ok?"var(--pos)":"var(--acc)"}"></i></div>
@@ -589,7 +521,7 @@ function renderOutils(){
   // pécule de vacances
   if(R.statut==="employe")$("peculeCard").innerHTML=`<div class="okbox">En tant qu'employé intérimaire, ton pécule (15,34 %) est déjà ajouté à chaque paie par l'agence.</div>`;
   else{const yN=now.getFullYear(),b1=periodeStats((yN-1)+"-01-01",(yN-1)+"-12-31").brut,b0=periodeStats(yN+"-01-01",yN+"-12-31").brut;
-    const pc=b=>b*1.08*0.1538;
+    const pc=peculeOuvrier;
     $("peculeCard").innerHTML=`<div class="grid"><div class="card" style="background:var(--card2);margin:0"><div class="k">Mai-juin ${yN}</div><div class="v" style="font-size:20px">${b1?eur(pc(b1)):"—"}</div><div class="sub">sur ${eur(b1)} brut ${yN-1}</div></div>
       <div class="card" style="background:var(--card2);margin:0"><div class="k">Mai-juin ${yN+1}</div><div class="v" style="font-size:20px">${b0?eur(pc(b0)):"—"}</div><div class="sub">déjà ${eur(b0)} brut en ${yN}</div></div></div>
       <p class="sub" style="margin-top:10px">Ouvrier : 15,38 % du brut de l'année précédente porté à 108 %, versé par l'ONVA en mai ou juin (montant brut, retenues ensuite). Pense à donner ton numéro de compte à l'ONVA.</p>`}
@@ -1120,7 +1052,6 @@ function parseCSV(txt){txt=txt.replace(/^﻿/,"");const first=txt.split(/\r?\n/)
     else if(c==="\n"||c==="\r"){if(c==="\r"&&txt[i+1]==="\n")i++;row.push(cell);if(row.some(x=>x.trim()))rows.push(row);row=[];cell=""}
     else cell+=c}
   row.push(cell);if(row.some(x=>x.trim()))rows.push(row);return rows}
-const nrm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
 function parseMontant(s){s=String(s||"").replace(/[€\s ]/g,"");if(!s)return NaN;
   if(/,\d{1,2}$/.test(s))s=s.replace(/\./g,"").replace(",",".");else s=s.replace(/,/g,"");return parseFloat(s)}
 function parseDateFR(s){s=String(s||"").trim();let m;
@@ -1539,9 +1470,9 @@ function controlePaie(r,m,pid){ // renvoie [{s:"ok"|"warn"|"bad"|"info",t,d}]
     if(lourd&&!has(/sursal|suppl|overtime|majoration|\b150\b|50 ?%|heures sup/))add("warn","Heures supplémentaires",`Plus de 40 h par semaine (ou plus de 9 h 30 sur un jour) mais aucun sursalaire visible. Les heures sup sont normalement payées +50 %.`)}
   // ONSS
   const on=L.find(l=>l.type==="retenue"&&/onss|rsz|cotis.*(soc|pers)|securite sociale|sec\.? ?soc/.test(nrm(l.libelle||"")));
-  if(on&&r.brut){const ouv=(S.reglages.statut||"ouvrier")==="ouvrier",att=r.brut*0.1307*(ouv?1.08:1),att2=r.brut*0.1307;
-    if(on.montant>Math.max(att,att2)*1.04+2)add("warn","Cotisations ONSS",`${eur2(on.montant)} retenus, c'est plus que les 13,07 % habituels (≈ ${eur2(att)}${ouv?" pour un ouvrier, sur 108 % du brut":""}).`);
-    else if(on.montant<Math.min(att,att2)*0.9-2)add("ok","Cotisations ONSS",`${eur2(on.montant)} : moins que 13,07 %, c'est sûrement le bonus à l'emploi (réduction pour les petits salaires), tant mieux pour toi.`);
+  if(on&&r.brut){const ouv=(S.reglages.statut||"ouvrier")==="ouvrier",v=verifOnss(on.montant,r.brut,ouv),att=v.attendu;
+    if(v.etat==="haut")add("warn","Cotisations ONSS",`${eur2(on.montant)} retenus, c'est plus que les 13,07 % habituels (≈ ${eur2(att)}${ouv?" pour un ouvrier, sur 108 % du brut":""}).`);
+    else if(v.etat==="bas")add("ok","Cotisations ONSS",`${eur2(on.montant)} : moins que 13,07 %, c'est sûrement le bonus à l'emploi (réduction pour les petits salaires), tant mieux pour toi.`);
     else add("ok","Cotisations ONSS",`${eur2(on.montant)} ≈ 13,07 %${ouv?" de 108 % du brut":" du brut"}.`)}
   // net / brut
   if(r.brut&&r.net){const q=r.net/r.brut;if(q<0.6||q>1.05)add("warn","Net par rapport au brut",`Le net fait ${Math.round(q*100)} % du brut : inhabituel, vérifie les retenues.`)}

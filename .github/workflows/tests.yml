@@ -1,0 +1,20 @@
+# Lance les tests des calculs (tests/) à chaque envoi sur GitHub.
+# Si un test échoue, GitHub affiche une croix rouge sur le commit.
+name: Tests des calculs
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test

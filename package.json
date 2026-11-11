@@ -1,0 +1,9 @@
+{
+  "name": "budget-interim",
+  "private": true,
+  "type": "module",
+  "description": "Appli web de budget pour intérimaires (Belgique). Pas de build : les fichiers sont servis tels quels par GitHub Pages.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

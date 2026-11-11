@@ -97,3 +97,8 @@ Augmente le numéro au même endroit partout (ex. 7 → 8) :
 - `sw.js` → `CACHE = "budget-interim-v8"` et les `?v=8`
 
 Les téléphones affichent alors le bandeau « Nouvelle version disponible ». Le bouton ↻ force la mise à jour à tout moment.
+
+**Code et tests**
+- `calculs.js` : toutes les règles de calcul belges (impôt, ONSS, bonus à l'emploi, prime de fin d'année, pécule, bilan fiscal), sans interface ni Firebase.
+- `tests/calculs.test.js` : tests automatiques de ces calculs. Pour les lancer : `npm test` (Node.js 22 ou plus, rien à installer).
+- Les tests tournent aussi tout seuls sur GitHub à chaque envoi (onglet *Actions*) : une croix rouge sur un commit veut dire qu'un calcul a changé.
