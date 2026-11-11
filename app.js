@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=28";
+import * as CFG from "./firebase-config.js?v=29";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=28;
+const APP_VERSION=29;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -15,7 +15,7 @@ function hideSplash(){if(splashGone)return;splashGone=true;const el=document.get
 setTimeout(hideSplash,6000);
 const DEFAULT_CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
 const cats=()=>(S.cats&&S.cats.length?S.cats:DEFAULT_CATS);
-const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],pointage:[],cr:[],dettes:[],defi:[],cats:null,reglages:{epargne:0,pct:10,mois:3,ratio:78,statut:"ouvrier",domicile:"",conso:6.5,carbu:1.8},adminDone:{},subsIgnore:[]};
+const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],pointage:[],cr:[],dettes:[],fiches281:[],defi:[],cats:null,reglages:{epargne:0,pct:10,mois:3,ratio:78,statut:"ouvrier",domicile:"",conso:6.5,carbu:1.8},adminDone:{},subsIgnore:[]};
 let S=JSON.parse(JSON.stringify(DEF));
 let cur=new Date();cur.setDate(1);
 const $=id=>document.getElementById(id);
@@ -34,9 +34,9 @@ function toast(t){const e=$("toast");e.textContent=t;e.classList.add("on");setTi
 /* ---------- stockage : Firebase ---------- */
 const isDate=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s);
 function clean(arr,needDate=true){return (Array.isArray(arr)?arr:[]).filter(x=>x&&typeof x==="object").map(x=>{if(!x.id)x.id=uid();if(needDate&&!isDate(x.date))x.date=today();return x})}
-function normalize(d){d=d||{};const n=normalize0(d);["paies","depenses","pointage","epargneLog","cr","dettes"].forEach(k=>n[k]=clean(n[k]));["missions","fixes","objectifs"].forEach(k=>n[k]=clean(n[k],false));
+function normalize(d){d=d||{};const n=normalize0(d);["paies","depenses","pointage","epargneLog","cr","dettes"].forEach(k=>n[k]=clean(n[k]));["missions","fixes","objectifs","fiches281"].forEach(k=>n[k]=clean(n[k],false));
   if(!Array.isArray(n.defi))n.defi=[];if(!n.budgets||typeof n.budgets!=="object")n.budgets={};if(n.cats&&!Array.isArray(n.cats))n.cats=null;return n}
-function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
+function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],fiches281:d.fiches281||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
 const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
@@ -365,7 +365,9 @@ const IPP={tranches:[[16320,.25],[28800,.40],[49840,.45],[Infinity,.50]],quotite
   enfants:[0,1980,5110,11440,18510],enfantSuivant:7070,   // supplément de quotité exemptée (cumulé) pour 0, 1, 2, 3, 4 enfants, puis par enfant en plus
   parentSeul:1980, enfantMoins3:750, quotientPct:.30, quotientMax:13470,
   // plafond de ressources nettes pour rester à charge de ses parents (approximatif, revenus 2025) : parents ensemble / parent seul
-  chargeParents:3950, chargeParentSeul:5700};
+  chargeParents:3950, chargeParentSeul:5700,
+  // bonus à l'emploi fiscal = réduction d'impôt de 33,14 % du bonus à l'emploi social (volet A ; 52,54 % pour le volet B), plafonnée (approximatif)
+  bonusFiscPct:.3314, bonusFiscMax:1120};
 function bareme(r){let prev=0,t=0;for(const[lim,taux]of IPP.tranches){if(r>prev)t+=(Math.min(r,lim)-prev)*taux;prev=lim}return t}
 const fraisForf=imp=>Math.min(Math.max(0,imp)*IPP.fraisPct,IPP.fraisMax);
 function supplEnfants(n){n=Math.max(0,Math.floor(+n||0));return n<=4?IPP.enfants[n]:IPP.enfants[4]+(n-4)*IPP.enfantSuivant}
@@ -375,7 +377,7 @@ function impotPersonne(net,quotite){return Math.max(0,bareme(net)-bareme(Math.mi
  * Impôt du foyer. R = situation : fiscSit "isole" | "couple", fiscEnf (enfants à charge), fiscEnf3 (dont moins de 3 ans),
  * fiscConj (brut imposable annuel du conjoint, après ONSS), fiscCommune (taxe communale en %).
  */
-function impotBelge(imposable,R={}){
+function impotBelge(imposable,R={},bonusSocial=0){
   const couple=R.fiscSit==="couple", nEnf=Math.max(0,+R.fiscEnf||0), n3=Math.min(nEnf,Math.max(0,+R.fiscEnf3||0));
   const communal=(R.fiscCommune===""||R.fiscCommune==null?7:+R.fiscCommune)/100;
   const frais=fraisForf(imposable);let net=Math.max(0,imposable-frais);
@@ -388,33 +390,50 @@ function impotBelge(imposable,R={}){
   const suppl=supplEnfants(nEnf)+n3*IPP.enfantMoins3+(!couple&&nEnf?IPP.parentSeul:0);
   const moiPlus=!couple||net>=netC;
   const qMoi=IPP.quotite+(moiPlus?suppl:0), qConj=IPP.quotite+(moiPlus?0:suppl);
-  const tMoi=impotPersonne(net,qMoi), tConj=couple?impotPersonne(netC,qConj):0;
+  let tMoi=impotPersonne(net,qMoi);const tConj=couple?impotPersonne(netC,qConj):0;
+  const bonusFisc=Math.min(Math.max(0,+bonusSocial||0)*IPP.bonusFiscPct,IPP.bonusFiscMax,tMoi);tMoi-=bonusFisc;
   const base=tMoi+tConj;
   // supplément de quotité non utilisé faute de revenus (crédit d'impôt remboursable pour enfants, non calculé ici)
   const perdu=suppl&&((moiPlus?net:netC)<(moiPlus?qMoi:qConj));
-  return {frais,fraisC,net:Math.max(0,imposable-frais),netC:couple?Math.max(0,conjImp-fraisC):0,quotient,suppl,base,communal:base*communal,communalPct:communal,total:base*(1+communal),couple,nEnf,perdu};
+  return {frais,fraisC,net:Math.max(0,imposable-frais),netC:couple?Math.max(0,conjImp-fraisC):0,quotient,suppl,base,communal:base*communal,communalPct:communal,total:base*(1+communal),couple,nEnf,perdu,bonusFisc};
 }
 const RX_ONSS=/onss|rsz|cotis.*(soc|pers)|securite sociale|sec\.? ?soc/, RX_PP=/precompte|voorheffing|bedrijfsvoorh|impot|prof\.? ?voorh/;
+const RX_BONUS=/bonus.{0,6}emploi|werkbonus|bas(ses)? salaires?/;
 function bilanFiscal(y){
-  const P=S.paies.filter(p=>!p.autre&&(p.date||"").startsWith(y));
-  const ouv=(S.reglages.statut||"ouvrier")==="ouvrier";
-  let brut=0,onss=0,pp=0,net=0,nDet=0,nEst=0,nSans=0;
+  const R=S.reglages, P=S.paies.filter(p=>!p.autre&&(p.date||"").startsWith(y));
+  const ouv=(R.statut||"ouvrier")==="ouvrier";
+  let brut=0,onss=0,pp=0,net=0,nDet=0,nEst=0,nSans=0,bonusP=0;
   P.forEach(p=>{net+=+p.montant||0;const d=p.detail;
     if(!d||!+d.brut){nSans++;return}
-    const L=Array.isArray(d.lignes)?d.lignes.filter(l=>l.type==="retenue"):[];
-    const on=L.filter(l=>RX_ONSS.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
-    const pr=L.filter(l=>RX_PP.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
+    const L=Array.isArray(d.lignes)?d.lignes:[], ret=L.filter(l=>l.type==="retenue");
+    let on=ret.filter(l=>RX_ONSS.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
+    const pr=ret.filter(l=>RX_PP.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
+    const bl=L.filter(l=>RX_BONUS.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
+    const att=+d.brut*.1307*(ouv?1.08:1);
     brut+=+d.brut;
-    if(on){onss+=on;nDet++}else{onss+=+d.brut*.1307*(ouv?1.08:1);nEst++}
+    if(on){
+      if(bl&&on>=att*.97){on=Math.max(0,on-bl);bonusP+=bl}   // ONSS plein + ligne « bonus à l'emploi » à part
+      else if(bl)bonusP+=bl;                                   // ONSS déjà réduit, bonus affiché pour info
+      else if(on<att*.97)bonusP+=att-on;                       // ONSS plus bas que 13,07 % = bonus à l'emploi
+      onss+=on;nDet++}
+    else{onss+=att;nEst++}
     pp+=pr});
-  const R=S.reglages, imposable=brut-onss, ipp=impotBelge(imposable,R);
+  // fiches 281.10 de l'année : chiffres officiels, prioritaires sur les fiches de paie
+  const F=(S.fiches281||[]).filter(f=>String(f.annee)===String(y)), src=F.length?"281":"paies";
+  const imposable=src==="281"?sum(F,f=>(+f.remu||0)+(+f.autres||0)):brut-onss;
+  const ppMoi=src==="281"?sum(F,f=>f.pp):pp, bonusSocial=src==="281"?sum(F,f=>f.bonus):bonusP;
+  const ipp=impotBelge(imposable,R,bonusSocial);
   const ppConj=ipp.couple?Math.max(0,+R.fiscConjPP||0):0;
-  return {P,brut,onss,pp,ppConj,net,nDet,nEst,nSans,imposable,ipp,solde:pp+ppConj-ipp.total};
+  // agences avec des paies cette année mais sans fiche 281.10
+  const mot=x=>nrm(x).replace(/[^a-z0-9 ]/g," ").split(/\s+/).filter(w=>w.length>2);
+  const agences=[...new Set(P.map(p=>(S.missions.find(m=>m.id===p.mission)||{}).agence).filter(Boolean))];
+  const manquantes=F.length?agences.filter(a=>!F.some(f=>mot(a).some(w=>mot(f.employeur).includes(w)))):[];
+  return {P,F,src,brut,onss,pp:ppMoi,ppConj,net,nDet,nEst,nSans,imposable,ipp,bonusSocial,manquantes,solde:ppMoi+ppConj-ipp.total};
 }
 /* À charge de ses parents ? ressources nettes = brut imposable − frais professionnels forfaitaires */
 function chargeParentsHTML(b,R,y){
   const res=Math.max(0,b.imposable-b.ipp.frais), plaf=R.fiscParentSeul?IPP.chargeParentSeul:IPP.chargeParents;
-  const fin=+y<new Date().getFullYear()?"":` (l'année n'est pas finie${b.nSans?", et les paies non scannées ne sont pas comptées":""})`;
+  const fin=+y<new Date().getFullYear()?"":` (l'année n'est pas finie${b.src==="paies"&&b.nSans?", et les paies non scannées ne sont pas comptées":""})`;
   return res>plaf
     ?`<div class="warnbox" style="margin:10px 0 0">👨‍👩‍👦 <b>Tu n'es plus à charge de tes parents pour ${y}</b> : tes ressources nettes (≈ ${eur(res)}) dépassent le plafond d'environ ${eur(plaf)}. Préviens-les : ils ne peuvent plus te déclarer comme enfant à charge, leur impôt va augmenter.</div>`
     :`<div class="okbox" style="margin:10px 0 0">👨‍👩‍👦 Tu es encore à charge de tes parents : ≈ ${eur(res)} de ressources nettes sur un plafond d'environ ${eur(plaf)}. Il te reste ≈ <b>${eur(plaf-res)}</b> avant de le dépasser${fin}.</div>`;
@@ -449,29 +468,43 @@ function renderBilanFiscal(y){
   const box=$("bilanFiscal");if(!box)return;
   const b=bilanFiscal(y);
   $("bilanAnnee").textContent=`🧾 Bilan fiscal ${y}`;
-  if(!b.P.length){box.innerHTML=`<div class="empty">Aucune paie en ${y}.</div>`;return}
-  if(!b.brut){box.innerHTML=`<div class="empty">Pour calculer tes cotisations et ton impôt, scanne tes fiches de paie 📷 (ou tes anciennes fiches 📚) : il faut le brut et les retenues de chaque fiche.</div>`;return}
+  const btn281=`<button class="btn sec scanBtn" data-mode="f281" style="margin-top:10px">📄 Scanner une fiche 281.10</button>`;
+  if(!b.P.length&&!b.F.length){box.innerHTML=`<div class="empty">Aucune paie en ${y}.</div>`+btn281;return}
+  if(b.src==="paies"&&!b.brut){box.innerHTML=`<div class="empty">Pour calculer tes cotisations et ton impôt, scanne tes fiches de paie 📷 (ou tes anciennes fiches 📚) : il faut le brut et les retenues de chaque fiche. Ou scanne directement tes fiches 281.10.</div>`+btn281;return}
   const pct=v=>(v*100).toLocaleString("fr-BE",{maximumFractionDigits:1})+" %";
   const ligne=(t,v,c="")=>`<div class="cat"><span>${t}</span><b class="${c}">${v}</b></div>`;
   const s=b.solde, couvert=b.P.length-b.nSans, i=b.ipp, R=S.reglages;
+  const revFoyer=b.imposable+(i.couple?+R.fiscConj||0:0);
+  const source=b.src==="281"
+    ?`<div class="okbox" style="margin:8px 0">📄 Chiffres officiels de ${b.F.length} fiche(s) 281.10.</div>`+
+      b.F.map(f=>`<div class="cat"><span>📄 ${esc(f.employeur||"Employeur")} <small style="color:var(--mut)">· ${eur(+f.remu+(+f.autres||0))} · précompte ${eur(f.pp)}</small></span><button class="del" data-del="fiches281:${f.id}">×</button></div>`).join("")+
+      (b.manquantes.length?`<div class="warnbox" style="margin:8px 0 0">Il manque la fiche 281.10 de : <b>${b.manquantes.map(esc).join(", ")}</b>. Tant qu'elle manque, ses revenus ne sont pas comptés.</div>`:"")+
+      `<div class="k" style="margin-top:14px">Tes revenus ${y}</div>`+
+      ligne("Rémunérations imposables",eur2(b.imposable))+
+      (b.bonusSocial?ligne("Bonus à l'emploi (réduction de tes cotisations ONSS)",eur2(b.bonusSocial)):"")+
+      ligne("Précompte professionnel retenu","− "+eur2(b.pp),"out")
+    :`<div class="sub" style="margin:8px 0">${couvert} fiche(s) de paie scannée(s) sur ${b.P.length} paie(s)${b.nSans?` · <b>${b.nSans} sans détail</b>, pas comptée(s) ci-dessous`:""}</div>`+
+      ligne("Salaire brut",eur2(b.brut))+
+      ligne(`Cotisations ONSS${b.nEst?` <small style="color:var(--mut)">(${b.nEst} estimée(s) à 13,07 %)</small>`:""}`,"− "+eur2(b.onss),"out")+
+      (b.bonusSocial?ligne("dont bonus à l'emploi (ONSS en moins)",eur2(b.bonusSocial)):"")+
+      ligne("Brut imposable",eur2(b.imposable))+
+      ligne("Précompte professionnel retenu","− "+eur2(b.pp),"out");
   box.innerHTML=
     `<div class="cat" style="cursor:pointer" data-fisc="1"><span>👪 ${situationTxt(R)}</span><b style="color:var(--acc,inherit)">Modifier ›</b></div>`+
-    `<div class="sub" style="margin:8px 0">${couvert} fiche(s) scannée(s) sur ${b.P.length} paie(s)${b.nSans?` · <b>${b.nSans} sans détail</b>, pas comptée(s) ci-dessous`:""}</div>`+
-    ligne("Salaire brut",eur2(b.brut))+
-    ligne(`Cotisations ONSS${b.nEst?` <small style="color:var(--mut)">(${b.nEst} estimée(s) à 13,07 %)</small>`:""}`,"− "+eur2(b.onss),"out")+
-    ligne("Brut imposable",eur2(b.imposable))+
-    ligne("Précompte professionnel retenu","− "+eur2(b.pp),"out")+
+    source+
     `<div class="k" style="margin-top:14px">Impôt estimé (déclaration ${+y+1})</div>`+
     ligne("Frais professionnels forfaitaires","− "+eur(i.frais))+
     ligne("Ton revenu net imposable",eur(i.net))+
     (i.couple?ligne("Revenu net imposable du conjoint",eur(i.netC))+(i.quotient?ligne("Quotient conjugal (transfert vers celui qui gagne le moins)",eur(i.quotient)):""):"")+
     (i.suppl?ligne(`Quotité exemptée en plus (enfants${!i.couple&&i.nEnf?", parent seul":""})`,eur(i.suppl)):"")+
+    (i.bonusFisc?ligne("Bonus à l'emploi fiscal (réduction d'impôt)","− "+eur(i.bonusFisc),"pos"):"")+
     ligne(`Impôt ${i.couple?"du ménage ":""}fédéral + communal (${pct(i.communalPct)})`,eur(i.total))+
-    ligne("Taux moyen",b.imposable+(i.couple?+R.fiscConj||0:0)?pct(i.total/(b.imposable+(i.couple?+R.fiscConj||0:0))):"—")+
+    ligne("Taux moyen",revFoyer?pct(i.total/revFoyer):"—")+
     `<div class="${s>=0?"okbox":"warnbox"}" style="margin:10px 0 0">${s>=0?`💚 Remboursement estimé : <b>${eur(s)}</b>`:`⚠️ Supplément à payer estimé : <b>${eur(-s)}</b>`}<br><small>Précompte retenu ${eur(b.pp)}${i.couple?` + conjoint ${eur(b.ppConj)}`:""} − impôt estimé ${eur(i.total)}.</small></div>`+
     (R.fiscSit==="parents"?chargeParentsHTML(b,R,y):"")+
     (i.perdu?`<div class="warnbox" style="margin:8px 0 0">Tes revenus sont trop bas pour profiter de tout le supplément pour enfants : tu as sans doute droit en plus à un <b>crédit d'impôt remboursable</b> (pas compté ici).</div>`:"")+
-    `<p class="sub" style="margin-top:8px">Estimation avec le barème des revenus 2025. Ne tient pas compte du bonus à l'emploi fiscal, des frais de garde, des pensions alimentaires ni des réductions (titres-services, épargne-pension…). Les montants officiels sont sur tes fiches 281.10.</p>`;
+    (b.src==="paies"?btn281+`<p class="sub" style="margin-top:6px">En mars, chaque agence t'envoie ta fiche 281.10 : scanne-la, le calcul utilisera les chiffres officiels.</p>`:btn281)+
+    `<p class="sub" style="margin-top:8px">Estimation avec le barème des revenus 2025. Le bonus à l'emploi fiscal est compté au taux le plus bas (33,14 %) : il peut être un peu plus élevé. Ne tient pas compte des frais de garde, des pensions alimentaires ni des réductions (titres-services, épargne-pension…).</p>`;
 }
 
 function renderStats(){
@@ -797,6 +830,57 @@ async function scanContrat(f){lastFile=f;
   }catch(e){if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;console.error(e);
     openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div><details style="margin-top:10px"><summary class="sub">Détail technique</summary><div class="sub" style="word-break:break-word;margin-top:6px">${esc(String(e&&e.message||e).slice(0,400))}</div></details>`)}
 }
+const PROMPT_281=`Tu lis la photo, capture d'écran ou PDF d'une FICHE FISCALE BELGE 281.10 (« Rémunérations des travailleurs salariés »), envoyée par un employeur, une agence d'intérim ou l'ONVA.
+Réponds UNIQUEMENT avec un objet JSON de cette forme :
+{"employeur":"nom de l'employeur / agence","annee":année des revenus (nombre, ex. 2025),
+"remunerations":montant du code 250 (rémunérations) ou null,
+"autres_imposables":somme des AUTRES montants imposables globalement de la fiche (codes 251, 252, 247 : arriérés, préavis, pécule de vacances anticipé…) ou 0,
+"precompte":montant du code 286 (précompte professionnel) ou null,
+"bonus_emploi":montant du code 284 (bonus à l'emploi : réduction des cotisations personnelles) ou null,
+"cotisation_speciale":montant du code 287 (cotisation spéciale de sécurité sociale) ou null,
+"frais_deplacement":montant du code 254 (frais de déplacement, exonérés) ou null,
+"resume":"1 phrase simple"}
+Règles : montants en euros, nombres avec un point décimal, positifs. Utilise les codes ET les libellés. N'invente rien : null si absent ou illisible.
+Si le document n'est pas une fiche 281.10, réponds {"erreur":"explication courte"}.`;
+let res281=null;
+async function scan281(f){lastFile=f;
+  if(!model||!canImg){toast("Scan indisponible");return}
+  if(f.size>20e6){toast("Fichier trop lourd");return}
+  openRaw(`<h3>Lecture de la fiche 281.10 <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini lit ta fiche fiscale… (5 à 30 s)</div>`);
+  const ctl=scanCtl=new AbortController();
+  try{const img=await toJpegB64(f);const res=await model.generateContent([PROMPT_281,{inlineData:img}]);
+    if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;
+    const r=parseJSON(res.response.text());
+    if(!r||typeof r!=="object"||r.erreur){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">${esc(r&&r.erreur||"Je n'ai pas reconnu de fiche 281.10.")}</div><button class="btn scanBtn" data-mode="f281" style="margin-top:12px">Réessayer avec une autre photo</button>`);return}
+    res281=norm281(r);show281(res281);
+  }catch(e){if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;console.error(e);
+    openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`)}
+}
+function norm281(r){const n=v=>v==null||v===""?0:Math.max(0,+String(v).replace(",",".")||0);
+  const an=Math.round(+r.annee)||new Date().getFullYear()-1;
+  return {employeur:String(r.employeur||"").slice(0,80),annee:an>=2000&&an<=2100?an:new Date().getFullYear()-1,remu:n(r.remunerations),autres:n(r.autres_imposables),pp:n(r.precompte),bonus:n(r.bonus_emploi),csss:n(r.cotisation_speciale),depl:n(r.frais_deplacement),resume:String(r.resume||"").slice(0,300)}}
+function show281(r){
+  const ex=(S.fiches281||[]).find(f=>String(f.annee)===String(r.annee)&&nrm(f.employeur)===nrm(r.employeur));
+  const inp=(name,lab,v)=>`<label>${lab}<input name="${name}" type="number" step="0.01" min="0" inputmode="decimal" value="${v||0}"></label>`;
+  openRaw(`<h3>Ta fiche 281.10 <button class="del" data-close>×</button></h3>
+   ${r.resume?`<div class="est" style="margin-bottom:10px">${esc(r.resume)}</div>`:""}
+   ${ex?`<div class="warnbox" style="margin-bottom:10px">🔁 Tu as déjà une fiche ${r.annee} de cet employeur : elle sera remplacée.</div>`:""}
+   <p class="sub" style="margin-bottom:10px">Vérifie les montants avec ta fiche avant d'enregistrer.</p>
+   <form data-f="f281">
+    <div class="two"><label>Employeur / agence<input name="employeur" required value="${esc(r.employeur)}"></label><label>Année des revenus<input name="annee" type="number" min="2000" max="2100" inputmode="numeric" value="${r.annee}"></label></div>
+    <div class="two">${inp("remu","Rémunérations (code 250)",r.remu)}${inp("pp","Précompte (code 286)",r.pp)}</div>
+    <div class="two">${inp("bonus","Bonus à l'emploi (code 284)",r.bonus)}${inp("autres","Autres imposables (251, 252…)",r.autres)}</div>
+    <div class="two">${inp("csss","Cotisation spéciale (287)",r.csss)}${inp("depl","Frais de déplacement (254)",r.depl)}</div>
+    <button class="btn">Enregistrer la fiche</button></form>`);
+}
+function save281(f,d){const n=v=>Math.max(0,+String(v||"").replace(",",".")||0);
+  const rec={employeur:String(d.employeur||"").trim().slice(0,80),annee:Math.round(n(d.annee))||new Date().getFullYear()-1,remu:n(d.remu),autres:n(d.autres),pp:n(d.pp),bonus:n(d.bonus),csss:n(d.csss),depl:n(d.depl)};
+  if(!Array.isArray(S.fiches281))S.fiches281=[];
+  let x=S.fiches281.find(o=>String(o.annee)===String(rec.annee)&&nrm(o.employeur)===nrm(rec.employeur));
+  if(x)Object.assign(x,rec);else{x={id:uid(),...rec};S.fiches281.push(x)}
+  if(lastFile){const file=lastFile,id=x.id;lastFile=null;savePhoto(file).then(ph=>{const o=S.fiches281.find(o=>o.id===id);if(ph&&o){if(o.photo)delPhoto(o.photo);o.photo=ph;save()}})}
+  res281=null;closeSheet();cur=new Date(rec.annee,11,1);save();toast(`Fiche 281.10 ${rec.annee} enregistrée ✓`);
+}
 function contratHTML(r){
   const L=(k,v)=>v?`<div class="ln"><span>${k}</span><b style="text-align:right">${v}</b></div>`:"";
   return `<div class="grid"><div class="card" style="background:var(--card2)"><div class="k">Mission</div><div class="v" style="font-size:16px">${esc(r.client||"—")}</div><div class="sub">${esc(r.agence||"")}</div></div>
@@ -874,7 +958,7 @@ async function calcTrajet(){const dep=$("fDep").value.trim(),arr=$("fArr").value
 /* ---------- démarches administratives (Belgique) ---------- */
 function demarches(y){const L=[
   {k:"bak"+y,date:y+"-01-10",t:"💾 Archive ton année "+(y-1),b:"Télécharge le CSV et le bilan PDF de "+(y-1)+" (onglet Stats) pour tes archives."},
-  {k:"281-"+y,date:y+"-03-05",t:"📄 Fiches fiscales 281.10",b:"Chaque agence doit t'envoyer ta fiche 281.10 de "+(y-1)+". Vérifie que tu en as bien une par agence : elles servent pour ta déclaration."},
+  {k:"281-"+y,date:y+"-03-05",t:"📄 Fiches fiscales 281.10",b:"Chaque agence doit t'envoyer ta fiche 281.10 de "+(y-1)+". Vérifie que tu en as bien une par agence : elles servent pour ta déclaration. Scanne-les dans l'appli (Stats → Bilan fiscal) pour un calcul d'impôt exact."},
   {k:"tax-"+y,date:y+"-05-15",t:"🧾 Déclaration d'impôts",b:"La déclaration (MyMinfin / Tax-on-web) est en général ouverte. Compare les montants préremplis avec tes 281.10 et note la date limite affichée sur MyMinfin."},
   {k:"tax2-"+y,date:y+"-07-01",t:"⏰ Déclaration envoyée ?",b:"Si ce n'est pas encore fait, vérifie la date limite sur MyMinfin et envoie ta déclaration."},
   {k:"fds-"+y,date:y+"-12-05",t:"🎁 Document de prime de fin d'année",b:"Le Fonds social des intérimaires envoie le document début décembre. Pas reçu vers le 15 décembre ? Demande un duplicata."}];
@@ -958,15 +1042,15 @@ async function lireFichierPartage(){try{const c=await caches.open("share");const
   const blob=await r.blob();const name=decodeURIComponent(r.headers.get("x-name")||"document");await c.delete("shared");return new File([blob],name,{type:blob.type||r.headers.get("content-type")||"image/jpeg"})}catch(e){return null}}
 async function gererPartage(){const f=await lireFichierPartage();if(!f){toast("Aucun fichier reçu");return}sharedFile=f;
   openRaw(`<h3>Document reçu <button class="del" data-close>×</button></h3><p class="sub" style="margin-bottom:10px">${esc(f.name)} · ${Math.round(f.size/1024)} Ko. C'est quoi ?</p>
-   <div style="display:grid;gap:10px"><button class="btn" data-share="auto">🤖 Laisse l'IA deviner</button><button class="btn sec" data-share="paie">💶 Fiche de paie</button><button class="btn sec" data-share="facture">🧾 Facture / ticket</button><button class="btn sec" data-share="contrat">📑 Contrat</button><button class="btn sec" data-share="releve">🏦 Relevé bancaire</button></div>`)}
+   <div style="display:grid;gap:10px"><button class="btn" data-share="auto">🤖 Laisse l'IA deviner</button><button class="btn sec" data-share="paie">💶 Fiche de paie</button><button class="btn sec" data-share="fiche281">📄 Fiche fiscale 281.10</button><button class="btn sec" data-share="facture">🧾 Facture / ticket</button><button class="btn sec" data-share="contrat">📑 Contrat</button><button class="btn sec" data-share="releve">🏦 Relevé bancaire</button></div>`)}
 async function routerPartage(type){const f=sharedFile;if(!f)return;
   if(/\.csv$/i.test(f.name||"")||/csv/.test(f.type||""))type="releve";
   if(type==="auto"){if(!model){toast("IA indisponible");return}openRaw(`<h3>Analyse… <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Je regarde de quel document il s'agit…</div>`);
-    try{const img=await toJpegB64(f);const res=await model.generateContent([`Quel est ce document ? Réponds UNIQUEMENT avec un JSON {"type":"paie"|"facture"|"contrat"|"releve"|"autre"} : "paie" = fiche de paie / décompte de salaire, "facture" = facture ou ticket de caisse, "contrat" = contrat de travail intérimaire, "releve" = relevé ou capture d'opérations bancaires.`,{inlineData:img}]);
+    try{const img=await toJpegB64(f);const res=await model.generateContent([`Quel est ce document ? Réponds UNIQUEMENT avec un JSON {"type":"paie"|"fiche281"|"facture"|"contrat"|"releve"|"autre"} : "paie" = fiche de paie / décompte de salaire, "fiche281" = fiche fiscale belge 281.10 (récapitulatif annuel des rémunérations), "facture" = facture ou ticket de caisse, "contrat" = contrat de travail intérimaire, "releve" = relevé ou capture d'opérations bancaires.`,{inlineData:img}]);
       type=(parseJSON(res.response.text())||{}).type}catch(e){openRaw(`<h3>Analyse impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`);return}
-    if(!["paie","facture","contrat","releve"].includes(type)){gererPartageRetry();return}}
-  ({paie:scanFile,facture:scanFacture,contrat:scanContrat,releve:scanReleve})[type](f)}
-function gererPartageRetry(){openRaw(`<h3>Je n'ai pas reconnu ce document <button class="del" data-close>×</button></h3><div style="display:grid;gap:10px"><button class="btn sec" data-share="paie">💶 Fiche de paie</button><button class="btn sec" data-share="facture">🧾 Facture / ticket</button><button class="btn sec" data-share="contrat">📑 Contrat</button><button class="btn sec" data-share="releve">🏦 Relevé bancaire</button></div>`)}
+    if(!["paie","fiche281","facture","contrat","releve"].includes(type)){gererPartageRetry();return}}
+  ({paie:scanFile,fiche281:scan281,facture:scanFacture,contrat:scanContrat,releve:scanReleve})[type](f)}
+function gererPartageRetry(){openRaw(`<h3>Je n'ai pas reconnu ce document <button class="del" data-close>×</button></h3><div style="display:grid;gap:10px"><button class="btn sec" data-share="paie">💶 Fiche de paie</button><button class="btn sec" data-share="fiche281">📄 Fiche fiscale 281.10</button><button class="btn sec" data-share="facture">🧾 Facture / ticket</button><button class="btn sec" data-share="contrat">📑 Contrat</button><button class="btn sec" data-share="releve">🏦 Relevé bancaire</button></div>`)}
 
 /* ---------- déverrouillage par empreinte (WebAuthn, sur cet appareil) ---------- */
 const b64u={enc:b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""),dec:s=>Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/")+"===".slice((s.length+3)%4)),c=>c.charCodeAt(0))};
@@ -1215,7 +1299,7 @@ function openSheet(type,ctx,item,opts={}){
    choix:`${head("Ajouter")}
     <div class="pick-h">À la main</div>
     <div class="pick-grid"><button class="main" data-open="depense"><span>💸</span>Une dépense<small>courses, resto, essence…</small></button><button data-open="paie"><span>💶</span>Une rentrée<small>paie, remboursement…</small></button></div>
-    ${canImg?`<div class="pick-h">Scanner avec l'IA</div><div class="pick-grid"><button class="scanBtn" data-mode="facture"><span>🧾</span>Ticket / facture</button><button class="scanBtn"><span>📷</span>Fiche de paie</button><button class="scanBtn" data-mode="contrat"><span>📑</span>Contrat</button><button type="button" onclick="document.getElementById('bHisto').click()"><span>📚</span>Anciennes fiches</button></div>`:""}
+    ${canImg?`<div class="pick-h">Scanner avec l'IA</div><div class="pick-grid"><button class="scanBtn" data-mode="facture"><span>🧾</span>Ticket / facture</button><button class="scanBtn"><span>📷</span>Fiche de paie</button><button class="scanBtn" data-mode="contrat"><span>📑</span>Contrat</button><button class="scanBtn" data-mode="f281"><span>📄</span>Fiche 281.10</button><button type="button" onclick="document.getElementById('bHisto').click()"><span>📚</span>Anciennes fiches</button></div>`:""}
     <div class="pick-h">Autre</div>
     <div class="pick-grid"><button data-open="epargne"><span>🐷</span>Mettre de côté</button><button data-open="fixe"><span>🔁</span>Charge fixe</button><button data-open="mission"><span>🏭</span>Mission</button><button data-open="objectif"><span>🎯</span>Objectif</button><button data-open="pointage"><span>⏱️</span>Pointer des heures</button><button data-open="cheques"><span>🍽️</span>Chèques-repas</button><button data-open="dette"><span>🤝</span>Dette / prêt</button><button type="button" data-go="releve"><span>🏦</span>Relevé bancaire</button></div>`,
   };
@@ -1542,6 +1626,7 @@ document.addEventListener("submit",e=>{
     const dt=new Date(d.date+"T12:00");cur=new Date(dt.getFullYear(),dt.getMonth(),1);
     factRes=null;closeSheet();save();toast(dep.paye?"Dépense ajoutée ✓":"Ajoutée · à payer avant le "+fmtD(dep.echeance||d.date));return}
   if(t==="contrat"&&contratRes){saveContrat(f,d);return}
+  if(t==="f281"&&res281){save281(f,d);return}
   if(t==="histo"&&histoRes.length){saveHisto(f);return}
   if(t==="dups"){nettoyerDoublons(f);return}
   if(t==="multi"&&multiRes.length){let n=0;multiRes.forEach(({r,file},i)=>{if(!f["m"+i]||!f["m"+i].checked)return;const id=uid();
@@ -1582,7 +1667,7 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day],[data-dups],[data-fisc]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
-  if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";const T={facture:"Scanner une facture / un ticket",contrat:"Scanner un contrat",paie:"Scanner une fiche de paie"},F={facture:scanFacture,contrat:scanContrat,paie:scanFile};pickSource(T[m]||T.paie,f=>(F[m]||scanFile)(f));return}
+  if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";const T={facture:"Scanner une facture / un ticket",contrat:"Scanner un contrat",paie:"Scanner une fiche de paie",f281:"Scanner une fiche fiscale 281.10"},F={facture:scanFacture,contrat:scanContrat,paie:scanFile,f281:scan281};pickSource(T[m]||T.paie,f=>(F[m]||scanFile)(f));return}
   if(b.dataset.src){choosePick(b.dataset.src);return}
   if(b.dataset.ask){chatSend(b.dataset.ask);return}
   if(b.dataset.ptype){document.querySelectorAll("#typeChips button").forEach(x=>x.classList.toggle("on",x===b));$("typeIn").value=b.dataset.ptype;return}
