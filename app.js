@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=25";
+import * as CFG from "./firebase-config.js?v=26";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=25;
+const APP_VERSION=26;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -359,8 +359,58 @@ function render(){
   if(document.activeElement?.closest?.("#fSet")==null){$("sEpargne").value=R.epargne;$("sPct").value=R.pct;$("sMois").value=R.mois;$("sRatio").value=R.ratio;$("sStatut").value=R.statut||"ouvrier";$("sDomicile").value=R.domicile||"";$("sConso").value=R.conso;$("sCarbu").value=R.carbu}
 }
 
+/* ---------- bilan fiscal de l'année (ONSS, précompte, impôt estimé) ---------- */
+// Paramètres IPP revenus 2025 (exercice 2026). Revalorisés chaque année d'environ 2 % : l'estimation reste proche.
+const IPP={tranches:[[16320,.25],[28800,.40],[49840,.45],[Infinity,.50]],quotite:10910,fraisPct:.30,fraisMax:5930,communal:.07};
+function bareme(r){let prev=0,t=0;for(const[lim,taux]of IPP.tranches){if(r>prev)t+=(Math.min(r,lim)-prev)*taux;prev=lim}return t}
+function impotBelge(imposable){
+  const frais=Math.min(Math.max(0,imposable)*IPP.fraisPct,IPP.fraisMax), net=Math.max(0,imposable-frais);
+  const base=Math.max(0,bareme(net)-bareme(Math.min(net,IPP.quotite)));
+  return {frais,net,base,communal:base*IPP.communal,total:base*(1+IPP.communal)};
+}
+const RX_ONSS=/onss|rsz|cotis.*(soc|pers)|securite sociale|sec\.? ?soc/, RX_PP=/precompte|voorheffing|bedrijfsvoorh|impot|prof\.? ?voorh/;
+function bilanFiscal(y){
+  const P=S.paies.filter(p=>!p.autre&&(p.date||"").startsWith(y));
+  const ouv=(S.reglages.statut||"ouvrier")==="ouvrier";
+  let brut=0,onss=0,pp=0,net=0,nDet=0,nEst=0,nSans=0;
+  P.forEach(p=>{net+=+p.montant||0;const d=p.detail;
+    if(!d||!+d.brut){nSans++;return}
+    const L=Array.isArray(d.lignes)?d.lignes.filter(l=>l.type==="retenue"):[];
+    const on=L.filter(l=>RX_ONSS.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
+    const pr=L.filter(l=>RX_PP.test(nrm(l.libelle))).reduce((t,l)=>t+(+l.montant||0),0);
+    brut+=+d.brut;
+    if(on){onss+=on;nDet++}else{onss+=+d.brut*.1307*(ouv?1.08:1);nEst++}
+    pp+=pr});
+  const imposable=brut-onss, ipp=impotBelge(imposable);
+  return {P,brut,onss,pp,net,nDet,nEst,nSans,imposable,ipp,solde:pp-ipp.total};
+}
+function renderBilanFiscal(y){
+  const box=$("bilanFiscal");if(!box)return;
+  const b=bilanFiscal(y);
+  $("bilanAnnee").textContent=`🧾 Bilan fiscal ${y}`;
+  if(!b.P.length){box.innerHTML=`<div class="empty">Aucune paie en ${y}.</div>`;return}
+  if(!b.brut){box.innerHTML=`<div class="empty">Pour calculer tes cotisations et ton impôt, scanne tes fiches de paie 📷 (ou tes anciennes fiches 📚) : il faut le brut et les retenues de chaque fiche.</div>`;return}
+  const pct=v=>(v*100).toLocaleString("fr-BE",{maximumFractionDigits:1})+" %";
+  const ligne=(t,v,c="")=>`<div class="cat"><span>${t}</span><b class="${c}">${v}</b></div>`;
+  const s=b.solde, couvert=b.P.length-b.nSans;
+  box.innerHTML=
+    `<div class="sub" style="margin-bottom:8px">${couvert} fiche(s) scannée(s) sur ${b.P.length} paie(s)${b.nSans?` · <b>${b.nSans} sans détail</b>, pas comptée(s) ci-dessous`:""}</div>`+
+    ligne("Salaire brut",eur2(b.brut))+
+    ligne(`Cotisations ONSS${b.nEst?` <small style="color:var(--mut)">(${b.nEst} estimée(s) à 13,07 %)</small>`:""}`,"− "+eur2(b.onss),"out")+
+    ligne("Brut imposable",eur2(b.imposable))+
+    ligne("Précompte professionnel retenu","− "+eur2(b.pp),"out")+
+    `<div class="k" style="margin-top:14px">Impôt estimé (déclaration ${+y+1})</div>`+
+    ligne("Frais professionnels forfaitaires","− "+eur(b.ipp.frais))+
+    ligne("Revenu net imposable",eur(b.ipp.net))+
+    ligne(`Impôt fédéral + communal (${pct(IPP.communal)})`,eur(b.ipp.total))+
+    ligne("Taux moyen",b.imposable?pct(b.ipp.total/b.imposable):"—")+
+    `<div class="${s>=0?"okbox":"warnbox"}" style="margin:10px 0 0">${s>=0?`💚 Remboursement estimé : <b>${eur(s)}</b>`:`⚠️ Supplément à payer estimé : <b>${eur(-s)}</b>`}<br><small>Précompte retenu ${eur(b.pp)} − impôt estimé ${eur(b.ipp.total)}.</small></div>`+
+    `<p class="sub" style="margin-top:8px">Estimation pour un isolé sans enfant à charge, barème revenus 2025, taxe communale moyenne de 7 %. Ne tient pas compte du bonus à l'emploi fiscal, des enfants, du conjoint ni des réductions (titres-services, épargne-pension…). Les montants officiels sont sur tes fiches 281.10.</p>`;
+}
+
 function renderStats(){
   const y=String(cur.getFullYear()), R=S.reglages;
+  renderBilanFiscal(y);
   const P=S.paies.filter(p=>!p.autre&&(p.date||"").startsWith(y)), D=S.depenses.filter(d=>(d.date||"").startsWith(y)&&!(d.fixe&&S.fixes.some(f=>f.id===d.fixe)));
   const net=sum(P,p=>p.montant), h=sum(P,p=>p.heures), fx=fixesTotal();
   const moisActifs=new Set([...P,...D].map(x=>x.date.slice(0,7)));
