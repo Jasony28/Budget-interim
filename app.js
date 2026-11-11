@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=26";
+import * as CFG from "./firebase-config.js?v=27";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=26;
+const APP_VERSION=27;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -361,12 +361,36 @@ function render(){
 
 /* ---------- bilan fiscal de l'année (ONSS, précompte, impôt estimé) ---------- */
 // Paramètres IPP revenus 2025 (exercice 2026). Revalorisés chaque année d'environ 2 % : l'estimation reste proche.
-const IPP={tranches:[[16320,.25],[28800,.40],[49840,.45],[Infinity,.50]],quotite:10910,fraisPct:.30,fraisMax:5930,communal:.07};
+const IPP={tranches:[[16320,.25],[28800,.40],[49840,.45],[Infinity,.50]],quotite:10910,fraisPct:.30,fraisMax:5930,
+  enfants:[0,1980,5110,11440,18510],enfantSuivant:7070,   // supplément de quotité exemptée (cumulé) pour 0, 1, 2, 3, 4 enfants, puis par enfant en plus
+  parentSeul:1980, enfantMoins3:750, quotientPct:.30, quotientMax:13470};
 function bareme(r){let prev=0,t=0;for(const[lim,taux]of IPP.tranches){if(r>prev)t+=(Math.min(r,lim)-prev)*taux;prev=lim}return t}
-function impotBelge(imposable){
-  const frais=Math.min(Math.max(0,imposable)*IPP.fraisPct,IPP.fraisMax), net=Math.max(0,imposable-frais);
-  const base=Math.max(0,bareme(net)-bareme(Math.min(net,IPP.quotite)));
-  return {frais,net,base,communal:base*IPP.communal,total:base*(1+IPP.communal)};
+const fraisForf=imp=>Math.min(Math.max(0,imp)*IPP.fraisPct,IPP.fraisMax);
+function supplEnfants(n){n=Math.max(0,Math.floor(+n||0));return n<=4?IPP.enfants[n]:IPP.enfants[4]+(n-4)*IPP.enfantSuivant}
+/** Impôt d'une personne : barème sur le revenu net, moins l'impôt sur sa quotité exemptée (limitée au revenu). */
+function impotPersonne(net,quotite){return Math.max(0,bareme(net)-bareme(Math.min(net,quotite)))}
+/**
+ * Impôt du foyer. R = situation : fiscSit "isole" | "couple", fiscEnf (enfants à charge), fiscEnf3 (dont moins de 3 ans),
+ * fiscConj (brut imposable annuel du conjoint, après ONSS), fiscCommune (taxe communale en %).
+ */
+function impotBelge(imposable,R={}){
+  const couple=R.fiscSit==="couple", nEnf=Math.max(0,+R.fiscEnf||0), n3=Math.min(nEnf,Math.max(0,+R.fiscEnf3||0));
+  const communal=(R.fiscCommune===""||R.fiscCommune==null?7:+R.fiscCommune)/100;
+  const frais=fraisForf(imposable);let net=Math.max(0,imposable-frais);
+  const conjImp=couple?Math.max(0,+R.fiscConj||0):0, fraisC=fraisForf(conjImp);let netC=Math.max(0,conjImp-fraisC);
+  // quotient conjugal : le conjoint qui gagne le moins reçoit jusqu'à 30 % des revenus du couple (plafonné)
+  let quotient=0;
+  if(couple){const tot=net+netC,bas=Math.min(net,netC);quotient=Math.max(0,Math.min(IPP.quotientPct*tot-bas,IPP.quotientMax));
+    if(quotient){if(net>=netC){net-=quotient;netC+=quotient}else{netC-=quotient;net+=quotient}}}
+  // suppléments pour enfants (+ parent seul) : au conjoint qui a le plus de revenus
+  const suppl=supplEnfants(nEnf)+n3*IPP.enfantMoins3+(!couple&&nEnf?IPP.parentSeul:0);
+  const moiPlus=!couple||net>=netC;
+  const qMoi=IPP.quotite+(moiPlus?suppl:0), qConj=IPP.quotite+(moiPlus?0:suppl);
+  const tMoi=impotPersonne(net,qMoi), tConj=couple?impotPersonne(netC,qConj):0;
+  const base=tMoi+tConj;
+  // supplément de quotité non utilisé faute de revenus (crédit d'impôt remboursable pour enfants, non calculé ici)
+  const perdu=suppl&&((moiPlus?net:netC)<(moiPlus?qMoi:qConj));
+  return {frais,fraisC,net:Math.max(0,imposable-frais),netC:couple?Math.max(0,conjImp-fraisC):0,quotient,suppl,base,communal:base*communal,communalPct:communal,total:base*(1+communal),couple,nEnf,perdu};
 }
 const RX_ONSS=/onss|rsz|cotis.*(soc|pers)|securite sociale|sec\.? ?soc/, RX_PP=/precompte|voorheffing|bedrijfsvoorh|impot|prof\.? ?voorh/;
 function bilanFiscal(y){
@@ -381,8 +405,34 @@ function bilanFiscal(y){
     brut+=+d.brut;
     if(on){onss+=on;nDet++}else{onss+=+d.brut*.1307*(ouv?1.08:1);nEst++}
     pp+=pr});
-  const imposable=brut-onss, ipp=impotBelge(imposable);
-  return {P,brut,onss,pp,net,nDet,nEst,nSans,imposable,ipp,solde:pp-ipp.total};
+  const R=S.reglages, imposable=brut-onss, ipp=impotBelge(imposable,R);
+  const ppConj=ipp.couple?Math.max(0,+R.fiscConjPP||0):0;
+  return {P,brut,onss,pp,ppConj,net,nDet,nEst,nSans,imposable,ipp,solde:pp+ppConj-ipp.total};
+}
+function situationTxt(R){
+  const n=+R.fiscEnf||0;
+  return (R.fiscSit==="couple"?"Marié(e) / cohabitant(e) légal(e)":"Isolé(e)")+(n?` · ${n} enfant${n>1?"s":""} à charge`:" · sans enfant à charge");
+}
+function situationFiscale(){
+  const R=S.reglages, v=k=>R[k]===undefined||R[k]===null?"":R[k];
+  openRaw(`<h3>Ma situation familiale <button class="del" data-close>×</button></h3>
+  <form id="fFisc">
+    <label>Situation au 1er janvier de l'année suivante<select name="fiscSit"><option value="isole" ${R.fiscSit!=="couple"?"selected":""}>Isolé(e), célibataire, divorcé(e), cohabitant de fait</option><option value="couple" ${R.fiscSit==="couple"?"selected":""}>Marié(e) ou cohabitant(e) légal(e)</option></select></label>
+    <div class="two"><label>Enfants à charge<input name="fiscEnf" type="number" min="0" step="1" inputmode="numeric" value="${v("fiscEnf")||0}"></label><label>dont moins de 3 ans<input name="fiscEnf3" type="number" min="0" step="1" inputmode="numeric" value="${v("fiscEnf3")||0}"></label></div>
+    <p class="sub" style="margin:6px 0 10px">Un cohabitant de fait (pas déclaré à la commune) compte comme isolé : chacun fait sa propre déclaration.</p>
+    <div class="k">Si tu es marié(e) ou cohabitant(e) légal(e)</div>
+    <div class="two"><label>Brut imposable du conjoint (année)<input name="fiscConj" type="number" min="0" step="1" inputmode="decimal" value="${v("fiscConj")}" placeholder="0"></label><label>Précompte retenu du conjoint<input name="fiscConjPP" type="number" min="0" step="1" inputmode="decimal" value="${v("fiscConjPP")}" placeholder="0"></label></div>
+    <p class="sub" style="margin:6px 0 10px">Brut moins ONSS, sur sa fiche 281.10 (case « rémunérations ») ou ses fiches de paie. Laisse 0 s'il n'a pas de revenus.</p>
+    <label>Taxe communale (%)<input name="fiscCommune" type="number" min="0" max="10" step="0.1" inputmode="decimal" value="${v("fiscCommune")===""?7:v("fiscCommune")}"></label>
+    <p class="sub" style="margin:6px 0 10px">Entre 0 et 9 % selon ta commune (souvent 6 à 8 %). Tu la trouves sur ton dernier avertissement-extrait de rôle.</p>
+    <button class="btn">Enregistrer</button>
+  </form>`);
+}
+function saveSituation(f){
+  const d=Object.fromEntries(new FormData(f)),R=S.reglages,n=x=>Math.max(0,+String(x||"").replace(",",".")||0);
+  R.fiscSit=d.fiscSit==="couple"?"couple":"isole";R.fiscEnf=Math.floor(n(d.fiscEnf));R.fiscEnf3=Math.min(R.fiscEnf,Math.floor(n(d.fiscEnf3)));
+  R.fiscConj=n(d.fiscConj);R.fiscConjPP=n(d.fiscConjPP);R.fiscCommune=Math.min(10,n(d.fiscCommune));
+  closeSheet();save();toast("Situation enregistrée ✓");
 }
 function renderBilanFiscal(y){
   const box=$("bilanFiscal");if(!box)return;
@@ -392,20 +442,24 @@ function renderBilanFiscal(y){
   if(!b.brut){box.innerHTML=`<div class="empty">Pour calculer tes cotisations et ton impôt, scanne tes fiches de paie 📷 (ou tes anciennes fiches 📚) : il faut le brut et les retenues de chaque fiche.</div>`;return}
   const pct=v=>(v*100).toLocaleString("fr-BE",{maximumFractionDigits:1})+" %";
   const ligne=(t,v,c="")=>`<div class="cat"><span>${t}</span><b class="${c}">${v}</b></div>`;
-  const s=b.solde, couvert=b.P.length-b.nSans;
+  const s=b.solde, couvert=b.P.length-b.nSans, i=b.ipp, R=S.reglages;
   box.innerHTML=
-    `<div class="sub" style="margin-bottom:8px">${couvert} fiche(s) scannée(s) sur ${b.P.length} paie(s)${b.nSans?` · <b>${b.nSans} sans détail</b>, pas comptée(s) ci-dessous`:""}</div>`+
+    `<div class="cat" style="cursor:pointer" data-fisc="1"><span>👪 ${situationTxt(R)}</span><b style="color:var(--acc,inherit)">Modifier ›</b></div>`+
+    `<div class="sub" style="margin:8px 0">${couvert} fiche(s) scannée(s) sur ${b.P.length} paie(s)${b.nSans?` · <b>${b.nSans} sans détail</b>, pas comptée(s) ci-dessous`:""}</div>`+
     ligne("Salaire brut",eur2(b.brut))+
     ligne(`Cotisations ONSS${b.nEst?` <small style="color:var(--mut)">(${b.nEst} estimée(s) à 13,07 %)</small>`:""}`,"− "+eur2(b.onss),"out")+
     ligne("Brut imposable",eur2(b.imposable))+
     ligne("Précompte professionnel retenu","− "+eur2(b.pp),"out")+
     `<div class="k" style="margin-top:14px">Impôt estimé (déclaration ${+y+1})</div>`+
-    ligne("Frais professionnels forfaitaires","− "+eur(b.ipp.frais))+
-    ligne("Revenu net imposable",eur(b.ipp.net))+
-    ligne(`Impôt fédéral + communal (${pct(IPP.communal)})`,eur(b.ipp.total))+
-    ligne("Taux moyen",b.imposable?pct(b.ipp.total/b.imposable):"—")+
-    `<div class="${s>=0?"okbox":"warnbox"}" style="margin:10px 0 0">${s>=0?`💚 Remboursement estimé : <b>${eur(s)}</b>`:`⚠️ Supplément à payer estimé : <b>${eur(-s)}</b>`}<br><small>Précompte retenu ${eur(b.pp)} − impôt estimé ${eur(b.ipp.total)}.</small></div>`+
-    `<p class="sub" style="margin-top:8px">Estimation pour un isolé sans enfant à charge, barème revenus 2025, taxe communale moyenne de 7 %. Ne tient pas compte du bonus à l'emploi fiscal, des enfants, du conjoint ni des réductions (titres-services, épargne-pension…). Les montants officiels sont sur tes fiches 281.10.</p>`;
+    ligne("Frais professionnels forfaitaires","− "+eur(i.frais))+
+    ligne("Ton revenu net imposable",eur(i.net))+
+    (i.couple?ligne("Revenu net imposable du conjoint",eur(i.netC))+(i.quotient?ligne("Quotient conjugal (transfert vers celui qui gagne le moins)",eur(i.quotient)):""):"")+
+    (i.suppl?ligne(`Quotité exemptée en plus (enfants${!i.couple&&i.nEnf?", parent seul":""})`,eur(i.suppl)):"")+
+    ligne(`Impôt ${i.couple?"du ménage ":""}fédéral + communal (${pct(i.communalPct)})`,eur(i.total))+
+    ligne("Taux moyen",b.imposable+(i.couple?+R.fiscConj||0:0)?pct(i.total/(b.imposable+(i.couple?+R.fiscConj||0:0))):"—")+
+    `<div class="${s>=0?"okbox":"warnbox"}" style="margin:10px 0 0">${s>=0?`💚 Remboursement estimé : <b>${eur(s)}</b>`:`⚠️ Supplément à payer estimé : <b>${eur(-s)}</b>`}<br><small>Précompte retenu ${eur(b.pp)}${i.couple?` + conjoint ${eur(b.ppConj)}`:""} − impôt estimé ${eur(i.total)}.</small></div>`+
+    (i.perdu?`<div class="warnbox" style="margin:8px 0 0">Tes revenus sont trop bas pour profiter de tout le supplément pour enfants : tu as sans doute droit en plus à un <b>crédit d'impôt remboursable</b> (pas compté ici).</div>`:"")+
+    `<p class="sub" style="margin-top:8px">Estimation avec le barème des revenus 2025. Ne tient pas compte du bonus à l'emploi fiscal, des frais de garde, des pensions alimentaires ni des réductions (titres-services, épargne-pension…). Les montants officiels sont sur tes fiches 281.10.</p>`;
 }
 
 function renderStats(){
@@ -1452,6 +1506,7 @@ function showScan(r){
 
 document.addEventListener("submit",e=>{
   e.preventDefault();const f=e.target;
+  if(f.id==="fFisc"){saveSituation(f);return}
   if(f.id==="fSet"){const R=S.reglages;R.epargne=+$("sEpargne").value||0;R.pct=+$("sPct").value||0;R.mois=+$("sMois").value||1;R.ratio=+$("sRatio").value||78;R.statut=$("sStatut").value;R.domicile=$("sDomicile").value.trim();R.conso=+$("sConso").value||6.5;R.carbu=+$("sCarbu").value||1.8;save();toast("Réglages enregistrés");return}
   const d=Object.fromEntries(new FormData(f));d.id=uid();
   const t=f.dataset.f;
@@ -1512,7 +1567,7 @@ document.addEventListener("submit",e=>{
 
 document.addEventListener("change",e=>{const k=e.target.dataset&&e.target.dataset.admin;if(!k)return;if(e.target.checked)S.adminDone[k]=1;else delete S.adminDone[k];save()});
 document.addEventListener("click",e=>{
-  const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day],[data-dups]");
+  const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day],[data-dups],[data-fisc]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
   if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";const T={facture:"Scanner une facture / un ticket",contrat:"Scanner un contrat",paie:"Scanner une fiche de paie"},F={facture:scanFacture,contrat:scanContrat,paie:scanFile};pickSource(T[m]||T.paie,f=>(F[m]||scanFile)(f));return}
@@ -1539,6 +1594,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.attach){const tg=b.dataset.attach;pickSource("Joindre un document",f=>attachPhoto(tg,f));return}
   if(b.id==="bCalc"){calcTrajet();return}
   if(b.dataset.dups){ouvrirDoublons();return}
+  if(b.dataset.fisc){situationFiscale();return}
   if(b.dataset.subadd){addSub(b.dataset.subadd);return}
   if(b.dataset.subign){S.subsIgnore.push(b.dataset.subign);save();return}
   if(b.dataset.share){routerPartage(b.dataset.share);return}
