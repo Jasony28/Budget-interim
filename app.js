@@ -3,11 +3,11 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=27";
+import * as CFG from "./firebase-config.js?v=28";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=27;
+const APP_VERSION=28;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -363,7 +363,9 @@ function render(){
 // Paramètres IPP revenus 2025 (exercice 2026). Revalorisés chaque année d'environ 2 % : l'estimation reste proche.
 const IPP={tranches:[[16320,.25],[28800,.40],[49840,.45],[Infinity,.50]],quotite:10910,fraisPct:.30,fraisMax:5930,
   enfants:[0,1980,5110,11440,18510],enfantSuivant:7070,   // supplément de quotité exemptée (cumulé) pour 0, 1, 2, 3, 4 enfants, puis par enfant en plus
-  parentSeul:1980, enfantMoins3:750, quotientPct:.30, quotientMax:13470};
+  parentSeul:1980, enfantMoins3:750, quotientPct:.30, quotientMax:13470,
+  // plafond de ressources nettes pour rester à charge de ses parents (approximatif, revenus 2025) : parents ensemble / parent seul
+  chargeParents:3950, chargeParentSeul:5700};
 function bareme(r){let prev=0,t=0;for(const[lim,taux]of IPP.tranches){if(r>prev)t+=(Math.min(r,lim)-prev)*taux;prev=lim}return t}
 const fraisForf=imp=>Math.min(Math.max(0,imp)*IPP.fraisPct,IPP.fraisMax);
 function supplEnfants(n){n=Math.max(0,Math.floor(+n||0));return n<=4?IPP.enfants[n]:IPP.enfants[4]+(n-4)*IPP.enfantSuivant}
@@ -409,17 +411,26 @@ function bilanFiscal(y){
   const ppConj=ipp.couple?Math.max(0,+R.fiscConjPP||0):0;
   return {P,brut,onss,pp,ppConj,net,nDet,nEst,nSans,imposable,ipp,solde:pp+ppConj-ipp.total};
 }
+/* À charge de ses parents ? ressources nettes = brut imposable − frais professionnels forfaitaires */
+function chargeParentsHTML(b,R,y){
+  const res=Math.max(0,b.imposable-b.ipp.frais), plaf=R.fiscParentSeul?IPP.chargeParentSeul:IPP.chargeParents;
+  const fin=+y<new Date().getFullYear()?"":` (l'année n'est pas finie${b.nSans?", et les paies non scannées ne sont pas comptées":""})`;
+  return res>plaf
+    ?`<div class="warnbox" style="margin:10px 0 0">👨‍👩‍👦 <b>Tu n'es plus à charge de tes parents pour ${y}</b> : tes ressources nettes (≈ ${eur(res)}) dépassent le plafond d'environ ${eur(plaf)}. Préviens-les : ils ne peuvent plus te déclarer comme enfant à charge, leur impôt va augmenter.</div>`
+    :`<div class="okbox" style="margin:10px 0 0">👨‍👩‍👦 Tu es encore à charge de tes parents : ≈ ${eur(res)} de ressources nettes sur un plafond d'environ ${eur(plaf)}. Il te reste ≈ <b>${eur(plaf-res)}</b> avant de le dépasser${fin}.</div>`;
+}
 function situationTxt(R){
   const n=+R.fiscEnf||0;
-  return (R.fiscSit==="couple"?"Marié(e) / cohabitant(e) légal(e)":"Isolé(e)")+(n?` · ${n} enfant${n>1?"s":""} à charge`:" · sans enfant à charge");
+  return (R.fiscSit==="couple"?"Marié(e) / cohabitant(e) légal(e)":R.fiscSit==="parents"?"Domicilié(e) chez mes parents":"Isolé(e)")+(n?` · ${n} enfant${n>1?"s":""} à charge`:" · sans enfant à charge");
 }
 function situationFiscale(){
   const R=S.reglages, v=k=>R[k]===undefined||R[k]===null?"":R[k];
   openRaw(`<h3>Ma situation familiale <button class="del" data-close>×</button></h3>
   <form id="fFisc">
-    <label>Situation au 1er janvier de l'année suivante<select name="fiscSit"><option value="isole" ${R.fiscSit!=="couple"?"selected":""}>Isolé(e), célibataire, divorcé(e), cohabitant de fait</option><option value="couple" ${R.fiscSit==="couple"?"selected":""}>Marié(e) ou cohabitant(e) légal(e)</option></select></label>
+    <label>Situation au 1er janvier de l'année suivante<select name="fiscSit"><option value="isole" ${!R.fiscSit||R.fiscSit==="isole"?"selected":""}>Isolé(e), célibataire, divorcé(e), cohabitant de fait</option><option value="parents" ${R.fiscSit==="parents"?"selected":""}>Domicilié(e) chez mes parents</option><option value="couple" ${R.fiscSit==="couple"?"selected":""}>Marié(e) ou cohabitant(e) légal(e)</option></select></label>
     <div class="two"><label>Enfants à charge<input name="fiscEnf" type="number" min="0" step="1" inputmode="numeric" value="${v("fiscEnf")||0}"></label><label>dont moins de 3 ans<input name="fiscEnf3" type="number" min="0" step="1" inputmode="numeric" value="${v("fiscEnf3")||0}"></label></div>
-    <p class="sub" style="margin:6px 0 10px">Un cohabitant de fait (pas déclaré à la commune) compte comme isolé : chacun fait sa propre déclaration.</p>
+    <p class="sub" style="margin:6px 0 10px">Un cohabitant de fait (pas déclaré à la commune) compte comme isolé : chacun fait sa propre déclaration. Chez tes parents, tu fais aussi ta propre déclaration.</p>
+    <label>Si tu vis chez tes parents, ils sont<select name="fiscParentSeul"><option value="0" ${!R.fiscParentSeul?"selected":""}>en couple (mariés / cohabitants)</option><option value="1" ${R.fiscParentSeul?"selected":""}>un parent seul</option></select></label>
     <div class="k">Si tu es marié(e) ou cohabitant(e) légal(e)</div>
     <div class="two"><label>Brut imposable du conjoint (année)<input name="fiscConj" type="number" min="0" step="1" inputmode="decimal" value="${v("fiscConj")}" placeholder="0"></label><label>Précompte retenu du conjoint<input name="fiscConjPP" type="number" min="0" step="1" inputmode="decimal" value="${v("fiscConjPP")}" placeholder="0"></label></div>
     <p class="sub" style="margin:6px 0 10px">Brut moins ONSS, sur sa fiche 281.10 (case « rémunérations ») ou ses fiches de paie. Laisse 0 s'il n'a pas de revenus.</p>
@@ -430,7 +441,7 @@ function situationFiscale(){
 }
 function saveSituation(f){
   const d=Object.fromEntries(new FormData(f)),R=S.reglages,n=x=>Math.max(0,+String(x||"").replace(",",".")||0);
-  R.fiscSit=d.fiscSit==="couple"?"couple":"isole";R.fiscEnf=Math.floor(n(d.fiscEnf));R.fiscEnf3=Math.min(R.fiscEnf,Math.floor(n(d.fiscEnf3)));
+  R.fiscSit=["couple","parents"].includes(d.fiscSit)?d.fiscSit:"isole";R.fiscParentSeul=d.fiscParentSeul==="1";R.fiscEnf=Math.floor(n(d.fiscEnf));R.fiscEnf3=Math.min(R.fiscEnf,Math.floor(n(d.fiscEnf3)));
   R.fiscConj=n(d.fiscConj);R.fiscConjPP=n(d.fiscConjPP);R.fiscCommune=Math.min(10,n(d.fiscCommune));
   closeSheet();save();toast("Situation enregistrée ✓");
 }
@@ -458,6 +469,7 @@ function renderBilanFiscal(y){
     ligne(`Impôt ${i.couple?"du ménage ":""}fédéral + communal (${pct(i.communalPct)})`,eur(i.total))+
     ligne("Taux moyen",b.imposable+(i.couple?+R.fiscConj||0:0)?pct(i.total/(b.imposable+(i.couple?+R.fiscConj||0:0))):"—")+
     `<div class="${s>=0?"okbox":"warnbox"}" style="margin:10px 0 0">${s>=0?`💚 Remboursement estimé : <b>${eur(s)}</b>`:`⚠️ Supplément à payer estimé : <b>${eur(-s)}</b>`}<br><small>Précompte retenu ${eur(b.pp)}${i.couple?` + conjoint ${eur(b.ppConj)}`:""} − impôt estimé ${eur(i.total)}.</small></div>`+
+    (R.fiscSit==="parents"?chargeParentsHTML(b,R,y):"")+
     (i.perdu?`<div class="warnbox" style="margin:8px 0 0">Tes revenus sont trop bas pour profiter de tout le supplément pour enfants : tu as sans doute droit en plus à un <b>crédit d'impôt remboursable</b> (pas compté ici).</div>`:"")+
     `<p class="sub" style="margin-top:8px">Estimation avec le barème des revenus 2025. Ne tient pas compte du bonus à l'emploi fiscal, des frais de garde, des pensions alimentaires ni des réductions (titres-services, épargne-pension…). Les montants officiels sont sur tes fiches 281.10.</p>`;
 }
