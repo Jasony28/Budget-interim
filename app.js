@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=43";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=43";
+import * as CFG from "./firebase-config.js?v=44";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=44";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=43;
+const APP_VERSION=44;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -613,8 +613,8 @@ function renderSettings(){
   const np=("Notification" in window)?Notification.permission:"unsupported";
   $("notifState").textContent=np==="granted"?"Activés : factures à payer, fins de mission, prélèvements, chèques-repas qui expirent.":np==="denied"?"Bloqués dans les réglages du téléphone/navigateur.":np==="unsupported"?"Non pris en charge sur cet appareil.":"Désactivés.";
   $("bNotif").hidden=np==="granted"||np==="unsupported";
-  const am=LS.get("aiModele",null),ep=LS.get("aiEpuise",{}),jr=new Date().toISOString().slice(0,10),nEp=Object.values(ep).filter(v=>v===jr).length;
-  $("aiState").textContent=!canImg?"Gemini n'est pas disponible.":`Modèle utilisé : ${am||geminiModel}${nEp?` · ${nEp} modèle(s) au quota épuisé aujourd'hui (bascule automatique)`:""}.`;
+  const am=LS.get("aiModele",null),ep=LS.get("aiEpuise",{}),nEp=Object.keys(ep).filter(k=>!k.startsWith("s:")&&typeof ep[k]==="number"&&ep[k]>Date.now()).length;
+  $("aiState").textContent=!canImg?"Gemini n'est pas disponible.":`Modèle utilisé : ${am||geminiModel}${nEp?` · ${nEp} modèle(s) en pause, quota atteint (bascule automatique ; retour au modèle principal dès que son quota revient, vers 9 h)`:""}.`;
   const lb=LS.get("lastBackup",null);$("lastBackup").textContent=lb?"dernière copie le "+new Date(lb).toLocaleDateString("fr-BE")+".":"aucune copie pour l'instant.";
 }
 $("fCat").onsubmit=e=>{e.preventDefault();e.stopPropagation();const v=$("catNew").value.trim().slice(0,30);if(!v)return;if(cats().includes(v)){toast("Existe déjà");return}S.cats=[...cats(),v];$("catNew").value="";save();toast("Catégorie ajoutée")};
@@ -1738,11 +1738,20 @@ function initAI(){
     const noms=[geminiModel,...geminiFallbacks.filter(n=>n&&n!==geminiModel)];
     const mk=json=>noms.map(n=>({n,m:getGenerativeModel(ai,{model:n,generationConfig:json?{responseMimeType:"application/json",temperature:0}:{temperature:0.4}})}));
     const chaines={json:mk(true),text:mk(false),search:noms.map(n=>({n,m:getGenerativeModel(ai,{model:n,tools:[{googleSearch:{}}]})}))};
-    const gen=async(parts,kind)=>{const ep=LS.get("aiEpuise",{}),jour=new Date().toISOString().slice(0,10);let last;
-      for(const {n,m} of chaines[kind]){if(ep[n]===jour)continue;
-        try{const r=await m.generateContent(parts);if(n!==noms[0]&&!window.__aiNote){window.__aiNote=1;toast("Quota du jour atteint : j'utilise un modèle plus léger ⚡")}LS.set("aiModele",n);return r}
+    // quota : un modèle « épuisé » est mis de côté jusqu'à une heure précise (minute, heure ou reset quotidien), plus pour toute la journée
+    const finJour=()=>{const d=new Date();d.setUTCHours(8,0,0,0);if(d<=new Date())d.setUTCDate(d.getUTCDate()+1);return +d}; // minuit en Californie ≈ 9 h en Belgique
+    const gen=async(parts,kind)=>{const ep=LS.get("aiEpuise",{}),now=Date.now();let last;
+      for(const k in ep)if(!(typeof ep[k]==="number"&&ep[k]>now))delete ep[k];LS.set("aiEpuise",ep);
+      for(const {n,m} of chaines[kind]){const cle=(kind==="search"?"s:":"")+n;if(ep[cle]>Date.now())continue;
+        try{const r=await m.generateContent(parts);if(n!==noms[0]&&!window.__aiNote){window.__aiNote=1;toast("Quota de "+noms[0]+" atteint : j'utilise un modèle plus léger ⚡")}LS.set("aiModele",n);return r}
         catch(e){last=e;const s=(String(e&&e.code||"")+" "+String(e&&e.message||e)).toLowerCase();
-          if(/429|quota|resource.?exhausted|rate.?limit|resource has been exhausted/.test(s)){ep[n]=jour;LS.set("aiEpuise",ep);continue}
+          if(/429|quota|resource.?exhausted|rate.?limit|resource has been exhausted/.test(s)){
+            const parJour=/per.?day|perday|daily|par jour/.test(s),parMin=!parJour&&/per.?minute|perminute|retry.?in|retrydelay|rpm|rate.?limit/.test(s);
+            if(parMin){// limite par minute (plusieurs captures d'affilée) : on attend puis on réessaie le même modèle
+              const sec=Math.min(40,Math.max(8,+((s.match(/retry(?:.?delay| in)[^0-9]*([0-9.]+)/)||[])[1]||20)));toast(`Gemini demande une petite pause (${Math.round(sec)} s)…`);
+              await new Promise(ok=>setTimeout(ok,sec*1000));try{const r=await m.generateContent(parts);LS.set("aiModele",n);return r}catch(e2){last=e2}
+              ep[cle]=Date.now()+5*6e4}else ep[cle]=parJour?finJour():Date.now()+36e5;
+            LS.set("aiEpuise",ep);continue}
           if(/404|not.?found|no longer available|not supported/.test(s)&&/model/.test(s))continue;
           // erreur passagère (serveur surchargé, coupure réseau d'une seconde) : on réessaie une fois, puis modèle suivant
           if(navigator.onLine&&!/\b4\d\d\b/.test(s)&&/\b50[0234]\b|overload|unavailable|internal|deadline|timeout|fetch|network/.test(s)){
