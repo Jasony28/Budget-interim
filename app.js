@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=39";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=39";
+import * as CFG from "./firebase-config.js?v=40";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=40";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=39;
+const APP_VERSION=40;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -1308,7 +1308,7 @@ function renderBourse(){const el=$("bourseCard");if(!el)return;const B=S.bourse,
     <div style="margin-top:10px">${T.sort((a,b)=>b.p.val-a.p.val).map(({t,p})=>row("",`<b data-btitre="${t.id}" style="cursor:pointer">${esc(t.nom)}${t.ticker?` <small style="color:var(--mut)">${esc(t.ticker)}</small>`:""}</b><small data-btitre="${t.id}" style="cursor:pointer">${p.q>0?qFmt(p.q)+" × "+eurT(p.prix):"vendu"} · ${p.manuel?"cours du "+(p.dateC?fmtD(p.dateC):"?"):"cours du "+fmtD(p.dateC)}</small>`,
       `<div style="text-align:right;cursor:pointer" data-btitre="${t.id}"><b>${eur2(p.val)}</b><div style="font-size:12px;color:${p.gain>=0?"var(--pos)":"var(--out)"}">${p.q>0?sg(p.gain)+" ("+(p.pct>=0?"+":"")+p.pct.toFixed(1).replace(".",",")+" %)":""}</div></div>`,t.type==="crypto"?"🪙":t.type==="etf"?"📊":"🏢")).join("")}</div>`
     :`<div class="empty">Note ce que tu achètes (ETF, actions, crypto) : je calcule ce que tu as investi et combien ça vaut aujourd'hui.</div>`)
-    +`<div class="two" style="margin-top:10px"><button type="button" class="btn sm" data-bop="">+ Achat / vente</button>${hasCrypto?`<button type="button" class="btn sec sm" data-bcrypto="1">↻ Cours crypto</button>`:""}</div>
+    +`${model?`<button type="button" class="btn sm" data-bscan="1" style="margin-top:10px;width:100%">📸 Importer une capture de mon appli de bourse</button>`:""}<div class="two" style="margin-top:8px"><button type="button" class="btn ${model?"sec ":""}sm" data-bop="">+ Achat / vente</button>${hasCrypto?`<button type="button" class="btn sec sm" data-bcrypto="1">↻ Cours crypto</button>`:""}</div>
     ${T.some(x=>x.t.type!=="crypto"&&x.p.q>0)?`<p class="sub" style="margin-top:8px">Pour les actions et ETF, touche une ligne puis « Mettre à jour le cours » avec le prix affiché dans ton appli de bourse (en €).</p>`:""}`}
 function bourseOpForm(tid,sens){const B=S.bourse,t=B.titres.find(x=>x.id===tid);
   openRaw(`<h3>${t?esc(t.nom):"Achat / vente"} <button class="del" type="button" data-close>×</button></h3>
@@ -1355,6 +1355,44 @@ async function bourseMajCrypto(){const ids=[...new Set(S.bourse.titres.filter(t=
     S.bourse.titres.forEach(t=>{const px=j[t.cg]&&+j[t.cg].eur;if(t.type==="crypto"&&px>0){S.bourse.cours[t.id]={prix:px,date:today()};n++}});
     save();if($("sheetBg").classList.contains("open")){const open=S.bourse.titres.find(t=>$("sheet").innerHTML.includes(`data-bop="${t.id}"`));if(open)bourseTitre(open.id)}toast(n?`${n} cours crypto mis à jour ✓`:"Aucun cours trouvé")}
   catch(e){console.warn(e);toast(navigator.onLine?"Service de cours indisponible, réessaie plus tard":"Pas de connexion internet")}}
+/* ---------- import d'une capture d'appli de bourse ---------- */
+const PROMPT_BOURSE=`Tu lis une capture d'écran (ou PDF) d'une appli de bourse ou de crypto (Trade Republic, Bolero, Revolut, Degiro, eToro, Keytrade, Binance, Bitvavo…) montrant un portefeuille ou une position.
+Réponds UNIQUEMENT avec un JSON : {"positions":[{"nom":"nom du titre","ticker":"code/symbole ou null","isin":"ISIN ou null","type":"etf" | "action" | "crypto","quantite":nombre de parts/unités ou null,"prix_moyen":prix d'achat moyen d'UNE part en euros ou null,"investi":montant total investi en euros ou null,"cours":prix actuel d'UNE part en euros ou null,"valeur":valeur actuelle totale de la position en euros ou null}]}
+Les ETF / trackers / fonds (iShares, Vanguard, Amundi, Xtrackers, MSCI, S&P 500…) ont le type "etf". Ne compte pas le solde d'espèces ni le total du portefeuille comme une position. Nombres au format JSON (point décimal, sans symbole). Si une valeur n'est pas visible, mets null. N'invente rien.
+Si ce n'est pas un portefeuille / une position de bourse : {"erreur":"explication courte"}.`;
+const CG_SYM={btc:"bitcoin",eth:"ethereum",sol:"solana",xrp:"ripple",bnb:"binancecoin",ada:"cardano",doge:"dogecoin",usdt:"tether",usdc:"usd-coin",link:"chainlink",dot:"polkadot",ltc:"litecoin"};
+let bourseRes=null;
+function bourseTrouve(x){const B=S.bourse,lo=v=>nrm(v||"");return B.titres.find(t=>(x.cg&&t.cg===x.cg)||(x.isin&&t.isin&&t.isin===x.isin)||(x.ticker&&t.ticker&&lo(t.ticker)===lo(x.ticker))||lo(t.nom)===lo(x.nom))}
+async function scanBourse(f){if(!model){toast("Scan indisponible");return}
+  openRaw(`<h3>Lecture de la capture <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini lit tes placements… (10 à 40 s)</div>`);
+  const ctl=scanCtl=new AbortController();
+  try{const img=await toJpegB64(f);const res=await model.generateContent([PROMPT_BOURSE,{inlineData:img}]);if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;
+    const r=parseJSON(res.response.text());
+    if(!r||r.erreur||!Array.isArray(r.positions)||!r.positions.length){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">${esc(r&&r.erreur||"Aucun placement trouvé sur la capture.")}</div>`);return}
+    const N=v=>{const n=+String(v??"").replace(",",".");return n>0&&isFinite(n)?n:null};
+    bourseRes=r.positions.slice(0,40).map(o=>{const type=["etf","action","crypto"].includes(o.type)?o.type:"action",tk=String(o.ticker||"").trim().toUpperCase().slice(0,15),nom=String(o.nom||tk||"").trim().slice(0,60);
+      let q=N(o.quantite),pm=N(o.prix_moyen),inv=N(o.investi),c=N(o.cours),v=N(o.valeur);
+      if(!q&&v&&c)q=v/c;if(!q&&inv&&pm)q=inv/pm;if(!c&&v&&q)c=v/q;if(!inv&&pm&&q)inv=pm*q;
+      const cg=type==="crypto"?(CG_SYM[tk.toLowerCase()]||(CRYPTOS.find(x=>nrm(x[1]).includes(nrm(nom).split(" ")[0]))||[""])[0]):"";
+      const x={nom,ticker:tk,isin:/^[A-Z]{2}[A-Z0-9]{10}$/.test(String(o.isin||"").toUpperCase())?String(o.isin).toUpperCase():"",type,cg,q,inv,c,ok:!!(q&&c&&nom)};x.ex=bourseTrouve(x);return x}).filter(x=>x.nom);
+    if(!bourseRes.length){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">Aucun placement lisible.</div>`);return}
+    openRaw(`<h3>${bourseRes.length} placement(s) trouvé(s) <button class="del" data-close>×</button></h3><p class="sub">Vérifie puis importe. Un placement déjà suivi est mis à jour (parts et cours), sans doublon.</p>
+     <div class="card" style="background:var(--card2);margin-top:10px">${bourseRes.map((x,i)=>{const p=x.ex?boursePos(x.ex):null;
+      return `<label class="chk" style="align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)"><input type="checkbox" data-bi="${i}" ${x.ok?"checked":"disabled"}><span style="flex:1"><b>${esc(x.nom)}</b>${x.ticker?` <small style="color:var(--mut)">${esc(x.ticker)}</small>`:""}<br>
+      <small style="color:var(--mut)">${BTYPES[x.type]} · ${x.q?qFmt(x.q)+" part(s)":"parts ?"} · cours ${x.c?eurT(x.c):"?"}${x.inv?" · investi "+eur2(x.inv):" · prix d'achat inconnu"}</small><br>
+      <small>${!x.ok?'<span style="color:var(--out)">Parts ou cours illisibles : pas importé</span>':x.ex?`🔄 mise à jour de ${esc(x.ex.nom)} (${qFmt(p.q)} → ${qFmt(x.q)} parts)`:"➕ nouveau placement"} · valeur <b>${x.q&&x.c?eur2(x.q*x.c):"?"}</b></small></span></label>`}).join("")}</div>
+     ${bourseRes.some(x=>x.ok&&!x.inv&&!x.ex)?`<p class="sub" style="margin-top:8px">⚠️ Sans prix d'achat sur la capture, je prends la valeur actuelle comme montant investi (gain de départ = 0 €).</p>`:""}
+     <button type="button" class="btn" data-bimport="1" style="margin-top:12px;width:100%">Importer</button>`);
+  }catch(e){if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;console.error(e);openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`)}}
+// aligne chaque placement sur la capture : on ajoute un achat ou une vente pour arriver au bon nombre de parts, puis on met le cours du jour
+function bourseImport(){if(!bourseRes)return;const B=S.bourse,t0=today();let n=0;
+  document.querySelectorAll("#sheet [data-bi]").forEach(cb=>{if(!cb.checked)return;const x=bourseRes[+cb.dataset.bi];if(!x||!x.ok)return;
+    let t=bourseTrouve(x);if(!t){t={id:uid(),nom:x.nom,ticker:x.ticker,isin:x.isin,type:x.type,cg:x.cg};B.titres.push(t)}else{if(x.isin&&!t.isin)t.isin=x.isin;if(x.ticker&&!t.ticker)t.ticker=x.ticker}
+    const p=boursePos(t),dq=x.q-p.q;
+    if(dq>1e-9){const cible=x.inv!=null?x.inv:p.cout+dq*x.c,ajout=cible-p.cout,px=ajout>0?ajout/dq:x.c;B.ops.push({id:uid(),titre:t.id,date:t0,sens:"achat",qte:Math.round(dq*1e8)/1e8,prix:Math.round(px*1e6)/1e6,frais:0,source:"capture"})}
+    else if(dq<-1e-9)B.ops.push({id:uid(),titre:t.id,date:t0,sens:"vente",qte:Math.round(-dq*1e8)/1e8,prix:Math.round(x.c*1e6)/1e6,frais:0,source:"capture"});
+    B.cours[t.id]={prix:Math.round(x.c*1e6)/1e6,date:t0};n++});
+  bourseRes=null;closeSheet();save();toast(n?`${n} placement(s) importé(s) ✓`:"Rien d'importé")}
 /* ---------- détail des chiffres de l'accueil (touche une carte) ---------- */
 function openStat(kind,c){
   const k=mkey(cur),M=monthData(k),mois=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
@@ -1779,6 +1817,8 @@ document.addEventListener("click",e=>{
   if(b.dataset.bcours){bourseCoursForm(b.dataset.bcours);return}
   if(b.dataset.bdelop){const B=S.bourse;B.ops=B.ops.filter(o=>o.id!==b.dataset.bdelop);const t=b.dataset.t;if(!B.ops.some(o=>o.titre===t)){B.titres=B.titres.filter(x=>x.id!==t);delete B.cours[t];closeSheet()}else bourseTitre(t);save();toast("Opération supprimée");return}
   if(b.dataset.bcrypto){bourseMajCrypto();return}
+  if(b.dataset.bscan){pickSource("Capture de ton appli de bourse (Trade Republic, Bolero, Revolut, Degiro, Binance…)",f=>scanBourse(f));return}
+  if(b.dataset.bimport){bourseImport();return}
   if(b.dataset.edit&&b.tagName!=="BUTTON"){const[ty,id]=b.dataset.edit.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.del2){const[k,id]=b.dataset.del2.split(":");
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Appuie encore pour confirmer";setTimeout(()=>{if(b.isConnected){b.dataset.confirm="";b.textContent="Supprimer"}},3000);return}
