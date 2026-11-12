@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=32";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=32";
+import * as CFG from "./firebase-config.js?v=33";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=33";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=32;
+const APP_VERSION=33;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -36,7 +36,9 @@ function toast(t){const e=$("toast");e.textContent=t;e.classList.add("on");setTi
 const isDate=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s);
 function clean(arr,needDate=true){return (Array.isArray(arr)?arr:[]).filter(x=>x&&typeof x==="object").map(x=>{if(!x.id)x.id=uid();if(needDate&&!isDate(x.date))x.date=today();return x})}
 function normalize(d){d=d||{};const n=normalize0(d);["paies","depenses","pointage","epargneLog","cr","dettes"].forEach(k=>n[k]=clean(n[k]));["missions","fixes","objectifs","fiches281"].forEach(k=>n[k]=clean(n[k],false));
-  if(!Array.isArray(n.defi))n.defi=[];if(!n.budgets||typeof n.budgets!=="object")n.budgets={};if(n.cats&&!Array.isArray(n.cats))n.cats=null;return n}
+  if(!Array.isArray(n.defi))n.defi=[];if(!n.budgets||typeof n.budgets!=="object")n.budgets={};if(n.cats&&!Array.isArray(n.cats))n.cats=null;
+  n.paies.forEach(p=>{if(p.detail&&Array.isArray(p.detail.jours)&&!p.archive){const h=heuresPayees({heures:p.detail.heures,jours:p.detail.jours}).heures;if(h&&h>(+p.heures||0)+0.25){p.heures=h;p.detail.heures=h}}}); // fiches déjà scannées : on rattrape les heures de récup payées
+  return n}
 function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],fiches281:d.fiches281||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
 const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
@@ -1017,6 +1019,7 @@ async function scanHisto(files){
     try{const img=await toJpegB64(files[i]);const res=await model.generateContent([PROMPT,{inlineData:img}]);const r=parseJSON(res.response.text());
       if(r&&!r.erreur&&(+r.net||+r.brut)){["brut","net","heures","taux_horaire_brut"].forEach(k=>{r[k]=r[k]!=null&&r[k]!==""?+r[k]||null:null});
         ["periode_debut","periode_fin","date_paiement"].forEach(k=>{if(!isDate(r[k]))r[k]=null});
+        if(Array.isArray(r.jours))heuresPayees(r);
         r.lignes=Array.isArray(r.lignes)?r.lignes.slice(0,25).map(l=>({libelle:String(l.libelle||"").slice(0,80),montant:Math.abs(+l.montant||0),type:["gain","retenue","info"].includes(l.type)?l.type:"info"})):[];
         r.jours=Array.isArray(r.jours)?r.jours.filter(j=>isDate(j.date)&&+j.heures>0).slice(0,31):[];delete r.resume;
         const date=r.date_paiement||r.periode_fin||r.periode_debut;
@@ -1304,9 +1307,11 @@ function aiErr(e){const m=(String(e&&e.code||"")+" "+String(e&&e.message||e||"")
   if(m.includes("not found")&&m.includes("model"))return "Aucun modèle Gemini disponible : il faut mettre à jour la liste dans firebase-config.js.";
   if(!navigator.onLine||m.includes("network")||m.includes("fetch"))return "Pas de connexion internet.";
   return "Lecture impossible, réessaie avec une photo plus nette.";}
+// heures payées = total du calendrier de la fiche s'il est plus grand (ex. jour de récup payé oublié par la lecture)
+function heuresPayees(r){const hj=(r.jours||[]).reduce((a,j)=>a+(+j.heures||0),0);if(hj>(+r.heures||0)+0.25)r.heures=Math.round(hj*100)/100;return r}
 const PROMPT=`Tu lis la photo ou capture d'écran d'une fiche de paie d'un travailleur intérimaire (probablement en Belgique ou en France).
 Extrais les informations et réponds UNIQUEMENT avec un objet JSON de cette forme :
-{"agence":"nom de l'agence d'intérim ou employeur","client":"entreprise utilisatrice / lieu de mission ou null","periode_debut":"YYYY-MM-DD ou null","periode_fin":"YYYY-MM-DD ou null","date_paiement":"YYYY-MM-DD ou null","heures":nombre total d'heures prestées ou null,"taux_horaire_brut":nombre ou null,"brut":salaire brut total ou null,"net":montant net à payer / viré sur le compte ou null,
+{"agence":"nom de l'agence d'intérim ou employeur","client":"entreprise utilisatrice / lieu de mission ou null","periode_debut":"YYYY-MM-DD ou null","periode_fin":"YYYY-MM-DD ou null","date_paiement":"YYYY-MM-DD ou null","heures":nombre TOTAL d'heures payées sur la fiche ou null (heures prestées + heures de récupération payées + jours fériés / petits chômages / congés payés en heures ; ex. 31 h prestées + 8 h de récup payées = 39),"taux_horaire_brut":nombre ou null,"brut":salaire brut total ou null,"net":montant net à payer / viré sur le compte ou null,
 "lignes":[{"libelle":"intitulé court en français","montant":nombre positif,"type":"gain" | "retenue" | "info"}],
 "avantages":"chèques-repas, éco-chèques, primes, etc. en une phrase, ou null","resume":"2 phrases simples qui expliquent la fiche (d'où vient la différence entre brut et net)",
 "cheques_repas_nombre":nombre de chèques-repas attribués ou null,"cheques_repas_valeur":valeur faciale d'un chèque-repas ou null,
@@ -1386,6 +1391,7 @@ async function scanFile(f){lastFile=f;
     ["agence","client","periode_debut","periode_fin","date_paiement","avantages","resume"].forEach(k=>{r[k]=r[k]==null?null:String(r[k]).slice(0,400)});
     ["periode_debut","periode_fin","date_paiement"].forEach(k=>{if(r[k]&&!/^\d{4}-\d{2}-\d{2}$/.test(r[k]))r[k]=null});
     r.jours=Array.isArray(r.jours)?r.jours.filter(j=>/^\d{4}-\d{2}-\d{2}$/.test(j.date)&&+j.heures>0).slice(0,31).map(j=>({date:j.date,heures:+j.heures})):[];
+    heuresPayees(r);
     ["cheques_repas_nombre","cheques_repas_valeur"].forEach(k=>{r[k]=r[k]!=null&&r[k]!==""?+r[k]||null:null});
     scanRes=r;showScan(r);
   }catch(e){
@@ -1469,8 +1475,8 @@ function controlePaie(r,m,pid){ // renvoie [{s:"ok"|"warn"|"bad"|"info",t,d}]
     else add("info","Heures payées",`${fmtN(r.heures)} h payées. Pointe tes heures (Outils → Pointage) pour que je puisse les comparer.`)}
   if(J.length&&r.heures){const hj=sum(J,j=>j.heures);if(Math.abs(hj-r.heures)>0.25)add("warn","Détail des jours",`Les jours détaillés font ${fmtN(hj)} h, mais ${fmtN(r.heures)} h sont payées.`)}
   // calcul heures × taux
-  if(r.heures&&r.taux_horaire_brut){const g=L.find(l=>l.type==="gain"&&/heure|presta|prest|uren|salaire de base/.test(nrm(l.libelle||"")));
-    if(g){const att=r.heures*r.taux_horaire_brut;if(Math.abs(g.montant-att)>1)add(g.montant<att?"bad":"info","Calcul du salaire",`${fmtN(r.heures)} h × ${eurT(r.taux_horaire_brut)} = ${eur2(att)}, mais la fiche indique ${eur2(g.montant)}.`);else add("ok","Calcul du salaire",`${fmtN(r.heures)} h × ${eurT(r.taux_horaire_brut)} = ${eur2(att)}.`)}}
+  if(r.heures&&r.taux_horaire_brut){const gl=L.filter(l=>l.type==="gain"&&/heure|presta|prest|uren|recup|salaire de base|ferie/.test(nrm(l.libelle||""))&&!/sursal|majoration|supplement|prime/.test(nrm(l.libelle||"")));const g=gl.length?{montant:sum(gl,l=>l.montant)}:null;
+    if(g){const att=r.heures*r.taux_horaire_brut;if(Math.abs(g.montant-att)>1)add(g.montant<att?"bad":"info","Calcul du salaire",`${fmtN(r.heures)} h × ${eurT(r.taux_horaire_brut)} = ${eur2(att)}, mais la fiche indique ${eur2(g.montant)}${gl.length>1?" ("+gl.map(l=>l.libelle).join(" + ")+")":""}.`);else add("ok","Calcul du salaire",`${fmtN(r.heures)} h × ${eurT(r.taux_horaire_brut)} = ${eur2(att)}.`)}}
   // heures sup
   if(r.heures&&r.periode_debut&&r.periode_fin){const sem=Math.max(1,Math.round((new Date(r.periode_fin)-new Date(r.periode_debut))/864e5+1)/7);const lourd=r.heures/sem>40.5||J.some(j=>+j.heures>9.5);
     if(lourd&&!has(/sursal|suppl|overtime|majoration|\b150\b|50 ?%|heures sup/))add("warn","Heures supplémentaires",`Plus de 40 h par semaine (ou plus de 9 h 30 sur un jour) mais aucun sursalaire visible. Les heures sup sont normalement payées +50 %.`)}
