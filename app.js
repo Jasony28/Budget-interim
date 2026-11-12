@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=36";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=36";
+import * as CFG from "./firebase-config.js?v=37";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=37";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=36;
+const APP_VERSION=37;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -267,7 +267,7 @@ function render(){
   // budget par jour
   $("jourCard").hidden=!isNow||(M.recu+M.att===0&&M.dep===0);
   if(isNow){const n=new Date(),dim=new Date(n.getFullYear(),n.getMonth()+1,0).getDate(),left=dim-n.getDate()+1;
-    const pj=prevu/left; // par jour : on tient compte de ce qui va encore rentrer et sortir$("parJour").textContent=eur(pj);$("jourCard").querySelector(".k").textContent=pj<0?"Il te manque":"Tu peux dépenser";$("parJour").className="v "+(pj<0?"out":pj<10?"pend":"pos");
+    const pj=prevu/left;/* par jour : on tient compte de ce qui va encore rentrer et sortir */$("parJour").textContent=eur(pj);$("jourCard").querySelector(".k").textContent=pj<0?"Il te manque":"Tu peux dépenser";$("parJour").className="v "+(pj<0?"out":pj<10?"pend":"pos");
     $("jourSub").innerHTML=`par jour<br>${left} jour${left>1?"s":""} restant${left>1?"s":""}`;$("moisBar").style.width=((n.getDate()-1)/dim*100)+"%"}
 
   // alertes
@@ -642,7 +642,7 @@ if(LS.get("pinHash",null)){showPad("unlock");if(LS.get("bioId",null))setTimeout(
 function rappels(){const t=today(),L=[],add=(id,date,title,body)=>L.push({id,date,title,body});
   S.depenses.filter(x=>x.paye===false&&x.echeance).forEach(x=>{const d=new Date(x.echeance+"T12:00");d.setDate(d.getDate()-3);add("f3-"+x.id,iso(d),"🧾 Facture à payer",`${x.note||x.cat} : ${eur2(x.montant)} avant le ${fmtD(x.echeance)}`);add("f0-"+x.id,x.echeance,"⚠️ Facture à payer aujourd'hui",`${x.note||x.cat} : ${eur2(x.montant)}`)});
   S.missions.filter(m=>m.fin&&m.fin>=t).forEach(m=>{const d=new Date(m.fin+"T12:00");d.setDate(d.getDate()-3);add("m-"+m.id+m.fin,iso(d),"🏭 Fin de mission bientôt",`${m.client||m.agence} se termine le ${fmtD(m.fin)}. Pense à relancer ton agence.`)});
-  const n=new Date();S.fixes.filter(f=>+f.jour>0).forEach(f=>{for(const off of [0,1]){const d=new Date(n.getFullYear(),n.getMonth()+off,+f.jour-1,12);add("p-"+f.id+iso(d),iso(d),"🔁 Prélèvement demain",`${f.nom} : ${eur2(f.montant)}`)}});
+  const n=new Date();S.fixes.filter(f=>+f.jour>0).forEach(f=>{for(const off of [0,1]){const dim=new Date(n.getFullYear(),n.getMonth()+off+1,0).getDate(),d=new Date(n.getFullYear(),n.getMonth()+off,Math.min(+f.jour,dim)-1,12);add("p-"+f.id+iso(d),iso(d),"🔁 Prélèvement demain",`${f.nom} : ${eur2(f.montant)}`)}});
   S.cr.forEach(l=>{const e=new Date(l.date+"T12:00");e.setFullYear(e.getFullYear()+1);e.setDate(e.getDate()-14);if((+l.nb||0)-(+l.used||0)>0)add("cr-"+l.id,iso(e),"🍽️ Chèques-repas","Des chèques-repas expirent dans 2 semaines.")});
   demarchesProches().filter(x=>!x.done).forEach(x=>add("adm-"+x.k,x.date,x.t,x.b.slice(0,120)));
   return L.filter(x=>x.date>=iso(new Date(Date.now()-864e5)))}
@@ -706,7 +706,7 @@ async function scanMany(files){
   const ctl=scanCtl=new AbortController();
   for(let i=0;i<files.length;i++){if(ctl.signal.aborted)return;
     try{const img=await toJpegB64(files[i]);const res=await model.generateContent([promptFact(),{inlineData:img}]);const r=parseJSON(res.response.text());
-      if(r&&!r.erreur&&r.montant_total){if(!cats().includes(r.categorie))r.categorie=cats()[cats().length-1];if(!r.date||!/^\d{4}-\d{2}-\d{2}$/.test(r.date))r.date=today();
+      if(r&&!r.erreur&&r.montant_total){if(!cats().includes(r.categorie))r.categorie=cats()[cats().length-1];if(!r.date||!/^\d{4}-\d{2}-\d{2}$/.test(r.date))r.date=today();corrigeAnneeFact(r);
         r.montant_total=Math.abs(+r.montant_total);r.lignes=Array.isArray(r.lignes)?r.lignes.slice(0,15):[];multiRes.push({r,file:files[i]})}
     }catch(e){console.error(e);if(i===0){openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`);return}}
     if($("multiProg"))$("multiProg").innerHTML=`<span class="spin"></span>${i+1} / ${files.length}`}
@@ -732,7 +732,7 @@ async function scanReleve(f){
   try{const img=await toJpegB64(f);const res=await model.generateContent([PROMPT_RELEVE(),{inlineData:img}]);if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;
     const r=parseJSON(res.response.text());
     if(!r||r.erreur||!Array.isArray(r.operations)||!r.operations.length){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">${esc(r&&r.erreur||"Aucune opération trouvée.")}</div>`);return}
-    releveRes=r.operations.filter(o=>/^\d{4}-\d{2}-\d{2}$/.test(o.date)&&+o.montant).slice(0,60).map(o=>{const m=+o.montant,lib=String(o.libelle||"").slice(0,50);
+    releveRes=r.operations.filter(o=>/^\d{4}-\d{2}-\d{2}$/.test(o.date)&&+o.montant).slice(0,60).map(o=>{o.date=decale(o.date,decalAnnee(o.date));const m=+o.montant,lib=String(o.libelle||"").slice(0,50);
       const near=(a,b,n)=>Math.abs(new Date(a)-new Date(b))<=n*864e5;
       const dup=m<0?S.depenses.some(d=>near(d.date,o.date,3)&&Math.abs(+d.montant-Math.abs(m))<0.01):S.paies.some(p=>near(p.date,o.date,7)&&Math.abs(+p.montant-m)<0.01);
       const ag=S.missions.some(mi=>mi.agence&&lib.toLowerCase().includes(mi.agence.toLowerCase().split(/[ .]/)[0]));
@@ -950,7 +950,9 @@ function renderScore(M,k){const {score,parts}=calcScore(M,k);
   $("scoreTips").innerHTML=tips.length?tips.map(esc).join("<br>"):"Tout est au vert ce mois-ci, continue comme ça !";}
 
 /* ---------- bilan PDF du mois ---------- */
-function loadScript(src){return new Promise((ok,ko)=>{if(document.querySelector(`script[src="${src}"]`)){ok();return}const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=()=>ko(new Error("chargement "+src));document.head.appendChild(s)})}
+// chargement d'un script externe ; en cas d'échec (hors ligne) on retire la balise pour pouvoir réessayer plus tard
+function loadScript(src){return new Promise((ok,ko)=>{const old=document.querySelector(`script[src="${src}"]`);if(old&&old.dataset.ok){ok();return}if(old)old.remove();
+  const s=document.createElement("script");s.src=src;s.onload=()=>{s.dataset.ok="1";ok()};s.onerror=()=>{s.remove();ko(new Error("chargement "+src))};document.head.appendChild(s)})}
 const pdfTxt=s=>String(s??"").replace(/[  ]/g," ").replace(/[^\x00-\xff€’–—…]/g,"").trim();
 async function bilanPDF(){
   const btn=$("bPdf");btn.disabled=true;btn.textContent="⏳ Création du PDF…";
@@ -961,14 +963,14 @@ async function bilanPDF(){
     const mois=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"}),red=[239,35,60],W=210;
     docp.setFillColor(...red);docp.rect(0,0,W,30,"F");docp.setTextColor(255);docp.setFont("helvetica","bold");docp.setFontSize(20);docp.text("Budget Intérim",14,14);
     docp.setFontSize(12);docp.setFont("helvetica","normal");docp.text(pdfTxt("Bilan de "+mois),14,22);docp.text(pdfTxt(($("who").textContent||"").replace("Connecté : ","")),W-14,22,{align:"right"});
-    const {score}=calcScore(M,k),ep=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)),x=>x.montant),reste=M.recu+M.att-M.depPaye;
+    const {score}=calcScore(M,k),ep=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)),x=>x.montant),reste=M.recu-M.depPaye,prevu=reste+M.att-M.aPayer;
     const tbl=(y,head,body,opt={})=>{docp.autoTable({startY:y,head:[head],body,theme:"grid",styles:{fontSize:9,cellPadding:2,textColor:30},headStyles:{fillColor:[24,24,28],textColor:255},alternateRowStyles:{fillColor:[247,247,248]},margin:{left:14,right:14},...opt});return docp.lastAutoTable.finalY+8};
     const h2=(y,t)=>{docp.setTextColor(...red);docp.setFont("helvetica","bold");docp.setFontSize(12);docp.text(pdfTxt(t),14,y);return y+3};
     let y=40;
-    y=tbl(h2(y,"Résumé"),["Indicateur","Montant"],[["Paies reçues",E(M.recu)],["Paies attendues",E(M.att)],["Charges fixes",E(M.fix)],["Dépenses variables",E(M.var_)],["Reste à vivre",E(reste)],["Épargne du mois",E(ep)],["Coussin de sécurité",E(R.epargne)],["Score de santé",score+" / 100"]],{columnStyles:{1:{halign:"right",fontStyle:"bold"}}});
+    y=tbl(h2(y,"Résumé"),["Indicateur","Montant"],[["Paies reçues",E(M.recu)],["À recevoir",E(M.att)],["Charges fixes",E(M.fix)],["Dépenses variables",E(M.var_)],["Dont factures à payer",E(M.aPayer)],["Reste à vivre (reçu − payé)",E(reste)],["Une fois tout reçu et payé",E(prevu)],["Épargne du mois",E(ep)],["Coussin de sécurité",E(R.epargne)],["Score de santé",score+" / 100"]],{columnStyles:{1:{halign:"right",fontStyle:"bold"}}});
     const c={};M.d.forEach(x=>c[x.cat]=(c[x.cat]||0)+(+x.montant||0));const ce=Object.entries(c).sort((a,b)=>b[1]-a[1]);
     if(ce.length)y=tbl(h2(y,"Dépenses par catégorie"),["Catégorie","Montant","Part"],ce.map(([n,v])=>[pdfTxt(n),E(v),Math.round(v/M.var_*100)+" %"]),{columnStyles:{1:{halign:"right"},2:{halign:"right"}}});
-    if(M.p.length)y=tbl(h2(y,"Paies"),["Date","Mission","Heures","Net","Statut"],[...M.p].sort((a,b)=>a.date.localeCompare(b.date)).map(p=>{const m=S.missions.find(x=>x.id===p.mission);return[new Date(p.date+"T12:00").toLocaleDateString("fr-BE"),pdfTxt(m?(m.client||m.agence):(p.note||"")),p.heures?fmtN(p.heures):"",E(p.montant),p.recu?"reçue":"attendue"]}),{columnStyles:{3:{halign:"right"}}});
+    if(M.p.length)y=tbl(h2(y,"Paies"),["Date","Mission","Heures","Net","Statut"],[...M.p].sort((a,b)=>a.date.localeCompare(b.date)).map(p=>{const m=S.missions.find(x=>x.id===p.mission);return[new Date(p.date+"T12:00").toLocaleDateString("fr-BE"),pdfTxt(m?(m.client||m.agence):(p.note||"")),p.heures?fmtN(p.heures):"",E(p.montant),p.recu?"reçue":"à recevoir"]}),{columnStyles:{3:{halign:"right"}}});
     if(S.fixes.length)y=tbl(h2(y,"Charges fixes"),["Charge","Jour","Montant"],S.fixes.map(f=>[pdfTxt(f.nom),f.jour||"",E(f.montant)]),{columnStyles:{2:{halign:"right"}}});
     if(M.all.length)y=tbl(h2(y,"Dépenses du mois"),["Date","Description","Catégorie","Montant"],[...M.all].sort((a,b)=>a.date.localeCompare(b.date)).map(d=>[new Date(d.date+"T12:00").toLocaleDateString("fr-BE"),pdfTxt(d.note||"")+(d.paye===false?" (à payer)":"")+(lie(d)?" (fixe)":""),pdfTxt(d.cat),E(d.montant)]),{columnStyles:{3:{halign:"right"}}});
     const n=docp.getNumberOfPages();for(let i=1;i<=n;i++){docp.setPage(i);docp.setFontSize(8);docp.setTextColor(150);docp.text(pdfTxt(`Généré le ${new Date().toLocaleDateString("fr-BE")} avec Budget Intérim`),14,290);docp.text(`${i} / ${n}`,W-14,290,{align:"right"})}
@@ -1267,6 +1269,17 @@ function reparerAnnee(p,missions){const m=missions.find(x=>x.id===p.mission);
     p.date=c;return}}}
 // l'IA lit parfois la bonne date avec la mauvaise année (ex. 10/11/2025 au lieu de 2026) : la paie part alors dans un vieux mois.
 // Si la même date dans l'année en cours tombe dans les 60 derniers jours (ou la semaine qui vient), on corrige.
+// mission correspondant à une fiche : même agence, puis même client, puis mission qui couvre la période, puis la plus récente
+function missionPourFiche(r){const lo=x=>nrm(x),ag=lo(r.agence),cl=lo(r.client),d=r.periode_fin||r.periode_debut||r.date_paiement||today();
+  const C=S.missions.filter(m=>ag&&m.agence&&(ag.includes(lo(m.agence))||lo(m.agence).includes(ag.split(" ")[0])));
+  const sc=m=>(cl&&m.client&&(cl.includes(lo(m.client).split(" ")[0])||lo(m.client).includes(cl.split(" ")[0]))?4:0)+((!m.debut||m.debut<=d)&&(!m.fin||m.fin>=(r.periode_debut||d))?2:0)+(cl&&m.client&&!(cl.includes(lo(m.client).split(" ")[0])||lo(m.client).includes(cl.split(" ")[0]))?-3:0);
+  return C.sort((a,b)=>sc(b)-sc(a)||(b.debut||"").localeCompare(a.debut||""))[0]}
+// écart d'années à appliquer à une date lue par l'IA (0 si elle semble juste)
+function decalAnnee(d){if(!/^\d{4}-\d{2}-\d{2}$/.test(d||""))return 0;const t=new Date(),y=t.getFullYear();if(Math.abs(new Date(d+"T12:00")-t)/864e5<200)return 0;
+  for(const yy of [y,y-1]){const j=(new Date(yy+d.slice(4)+"T12:00")-t)/864e5;if(j>=-60&&j<=7)return yy-+d.slice(0,4)}return 0}
+const decale=(d,n)=>n&&/^\d{4}-\d{2}-\d{2}$/.test(d||"")?(+d.slice(0,4)+n)+d.slice(4):d;
+// ticket / facture : on corrige la date et on décale l'échéance d'autant
+function corrigeAnneeFact(r){const n=decalAnnee(r.date);if(n){r.date=decale(r.date,n);r.echeance=decale(r.echeance,n)}return n}
 function corrigeAnnee(r){const t=new Date(),y=t.getFullYear();let lu=null;
   const fx=d=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(d||""))return d;const n=new Date(d+"T12:00");if(Math.abs(n-t)/864e5<200)return d;
     for(const yy of [y,y-1]){const c=yy+d.slice(4),j=(new Date(c+"T12:00")-t)/864e5;if(j>=-60&&j<=7){lu=lu||d.slice(0,4);return c}}return d};
@@ -1447,6 +1460,7 @@ async function scanFacture(f){lastFile=f;
     r.montant_total=r.montant_total!=null?Math.abs(+r.montant_total)||null:null;
     ["fournisseur","resume","periodicite","type"].forEach(k=>{r[k]=r[k]==null?null:String(r[k]).slice(0,300)});
     ["date","echeance"].forEach(k=>{if(r[k]&&!/^\d{4}-\d{2}-\d{2}$/.test(r[k]))r[k]=null});
+    corrigeAnneeFact(r);
     if(!cats().includes(r.categorie))r.categorie=cats().includes("Autre")?"Autre":cats()[cats().length-1];
     r.deja_paye=!!r.deja_paye;r.recurrent=!!r.recurrent;
     factRes=r;showFacture(r);
@@ -1542,8 +1556,7 @@ function msgAgence(r,m,I){const pb=I.filter(x=>x.s==="bad"||x.s==="warn");
   return `Bonjour,\n\nJ'ai vérifié ma fiche de paie${per}${m?` (mission ${m.client||m.agence})`:""} et certains points me posent question :\n\n${pb.map(x=>"• "+x.t+" : "+jeDis(x.d)).join("\n")}\n\nPourriez-vous vérifier et me tenir au courant ? Merci d'avance.\n\nBonne journée`}
 let scanCtrl=null;
 function showScan(r){
-  const ag=(r.agence||"").toLowerCase();
-  const match=S.missions.find(m=>ag&&m.agence&&(ag.includes(m.agence.toLowerCase())||m.agence.toLowerCase().includes(ag.split(" ")[0])));
+  const match=missionPourFiche(r);
   const anCorr=corrigeAnnee(r);
   // une fiche de régularisation (période ancienne, établie récemment) est payée vers sa date d'établissement, pas à la fin de la période
   const etab=/^\d{4}-\d{2}-\d{2}$/.test(r.date_etablissement||"")&&r.date_etablissement<=today()?r.date_etablissement:null;
