@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=40";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=40";
+import * as CFG from "./firebase-config.js?v=41";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=41";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=40;
+const APP_VERSION=41;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -1363,12 +1363,19 @@ Si ce n'est pas un portefeuille / une position de bourse : {"erreur":"explicatio
 const CG_SYM={btc:"bitcoin",eth:"ethereum",sol:"solana",xrp:"ripple",bnb:"binancecoin",ada:"cardano",doge:"dogecoin",usdt:"tether",usdc:"usd-coin",link:"chainlink",dot:"polkadot",ltc:"litecoin"};
 let bourseRes=null;
 function bourseTrouve(x){const B=S.bourse,lo=v=>nrm(v||"");return B.titres.find(t=>(x.cg&&t.cg===x.cg)||(x.isin&&t.isin&&t.isin===x.isin)||(x.ticker&&t.ticker&&lo(t.ticker)===lo(x.ticker))||lo(t.nom)===lo(x.nom))}
-async function scanBourse(f){if(!model){toast("Scan indisponible");return}
-  openRaw(`<h3>Lecture de la capture <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini lit tes placements… (10 à 40 s)</div>`);
-  const ctl=scanCtl=new AbortController();
-  try{const img=await toJpegB64(f);const res=await model.generateContent([PROMPT_BOURSE,{inlineData:img}]);if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;
-    const r=parseJSON(res.response.text());
-    if(!r||r.erreur||!Array.isArray(r.positions)||!r.positions.length){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">${esc(r&&r.erreur||"Aucun placement trouvé sur la capture.")}</div>`);return}
+async function scanBourse(files){if(!model){toast("Scan indisponible");return}files=Array.isArray(files)?files:[files];
+  const ctl=scanCtl=new AbortController(),tous=[],errs=[];
+  try{for(let i=0;i<files.length;i++){
+      openRaw(`<h3>Lecture des captures <button class="del" data-close>×</button></h3><div class="est"><span class="spin"></span>Gemini lit ${files.length>1?`la capture ${i+1} sur ${files.length}`:"tes placements"}… (10 à 40 s${files.length>1?" chacune":""})</div>`);
+      try{const img=await toJpegB64(files[i]);const res=await model.generateContent([PROMPT_BOURSE,{inlineData:img}]);if(scanCtl!==ctl||ctl.signal.aborted)return;
+        const r=parseJSON(res.response.text());if(r&&Array.isArray(r.positions))tous.push(...r.positions);else errs.push(`Capture ${i+1} : ${r&&r.erreur||"rien de lisible"}`)}
+      catch(e){if(scanCtl!==ctl||ctl.signal.aborted)return;console.error(e);errs.push(`Capture ${i+1} : ${aiErr(e)}`)}}
+    scanCtl=null;
+    // même placement sur deux captures (qui se chevauchent) : on le garde une fois, avec le plus d'infos
+    const cle=o=>(o.isin||"").toUpperCase()||(o.ticker||"").toUpperCase()||nrm(o.nom||""),info=o=>["quantite","prix_moyen","investi","cours","valeur"].filter(k=>+o[k]>0).length,vu={};
+    tous.forEach(o=>{const k=cle(o);if(!k)return;if(!vu[k]||info(o)>info(vu[k]))vu[k]=o});
+    const r={positions:Object.values(vu)};
+    if(!r.positions.length){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">${esc(errs.join(" · ")||"Aucun placement trouvé sur la capture.")}</div>`);return}
     const N=v=>{const n=+String(v??"").replace(",",".");return n>0&&isFinite(n)?n:null};
     bourseRes=r.positions.slice(0,40).map(o=>{const type=["etf","action","crypto"].includes(o.type)?o.type:"action",tk=String(o.ticker||"").trim().toUpperCase().slice(0,15),nom=String(o.nom||tk||"").trim().slice(0,60);
       let q=N(o.quantite),pm=N(o.prix_moyen),inv=N(o.investi),c=N(o.cours),v=N(o.valeur);
@@ -1382,6 +1389,7 @@ async function scanBourse(f){if(!model){toast("Scan indisponible");return}
       <small style="color:var(--mut)">${BTYPES[x.type]} · ${x.q?qFmt(x.q)+" part(s)":"parts ?"} · cours ${x.c?eurT(x.c):"?"}${x.inv?" · investi "+eur2(x.inv):" · prix d'achat inconnu"}</small><br>
       <small>${!x.ok?'<span style="color:var(--out)">Parts ou cours illisibles : pas importé</span>':x.ex?`🔄 mise à jour de ${esc(x.ex.nom)} (${qFmt(p.q)} → ${qFmt(x.q)} parts)`:"➕ nouveau placement"} · valeur <b>${x.q&&x.c?eur2(x.q*x.c):"?"}</b></small></span></label>`}).join("")}</div>
      ${bourseRes.some(x=>x.ok&&!x.inv&&!x.ex)?`<p class="sub" style="margin-top:8px">⚠️ Sans prix d'achat sur la capture, je prends la valeur actuelle comme montant investi (gain de départ = 0 €).</p>`:""}
+     ${errs.length?`<p class="sub" style="margin-top:8px;color:var(--out)">${errs.map(esc).join("<br>")}</p>`:""}
      <button type="button" class="btn" data-bimport="1" style="margin-top:12px;width:100%">Importer</button>`);
   }catch(e){if(scanCtl!==ctl||ctl.signal.aborted)return;scanCtl=null;console.error(e);openRaw(`<h3>Lecture impossible <button class="del" data-close>×</button></h3><div class="est">${esc(aiErr(e))}</div>`)}}
 // aligne chaque placement sur la capture : on ajoute un achat ou une vente pour arriver au bon nombre de parts, puis on met le cours du jour
@@ -1448,6 +1456,9 @@ function initAI(){
         catch(e){last=e;const s=(String(e&&e.code||"")+" "+String(e&&e.message||e)).toLowerCase();
           if(/429|quota|resource.?exhausted|rate.?limit|resource has been exhausted/.test(s)){ep[n]=jour;LS.set("aiEpuise",ep);continue}
           if(/404|not.?found|no longer available|not supported/.test(s)&&/model/.test(s))continue;
+          // erreur passagère (serveur surchargé, coupure réseau d'une seconde) : on réessaie une fois, puis modèle suivant
+          if(navigator.onLine&&!/\b4\d\d\b/.test(s)&&/\b50[0234]\b|overload|unavailable|internal|deadline|timeout|fetch|network/.test(s)){
+            await new Promise(ok=>setTimeout(ok,2500));try{const r=await m.generateContent(parts);LS.set("aiModele",n);return r}catch(e2){last=e2;continue}}
           throw e}}
       throw last||new Error("quota")};
     model={generateContent:p=>gen(p,"json")};textModel={generateContent:p=>gen(p,"text")};
@@ -1481,7 +1492,12 @@ function aiErr(e){const m=(String(e&&e.code||"")+" "+String(e&&e.message||e||"")
   if(m.includes("429")||m.includes("quota")||m.includes("resource exhausted")||m.includes("resource_exhausted")||m.includes("resource has been exhausted"))return "Quota gratuit de Gemini épuisé pour aujourd'hui sur tous les modèles. Il revient vers 9 h (minuit heure de Californie). Pour ne plus être bloqué : Réglages → « Gemini : plus de quota ».";
   if(m.includes("api has not been used")||m.includes("not enabled")||m.includes("permission"))return "Firebase AI Logic n'est pas activé sur ton projet (voir README).";
   if(m.includes("not found")&&m.includes("model"))return "Aucun modèle Gemini disponible : il faut mettre à jour la liste dans firebase-config.js.";
-  if(!navigator.onLine||m.includes("network")||m.includes("fetch"))return "Pas de connexion internet.";
+  if(!navigator.onLine)return "Pas de connexion internet.";
+  const code=(m.match(/\b([45]\d\d)\b/)||[])[1];
+  if(code==="503"||m.includes("overload")||m.includes("unavailable"))return "Gemini est surchargé en ce moment. Réessaie dans une minute.";
+  if(code==="400"&&(m.includes("image")||m.includes("size")||m.includes("payload")||m.includes("too large")))return "Image refusée par Gemini (trop grande ou illisible). Recadre la capture et réessaie.";
+  if(code)return `Gemini a renvoyé une erreur (code ${code}). Réessaie dans un instant.`;
+  if(m.includes("network")||m.includes("fetch")||m.includes("timeout"))return "La connexion avec Gemini a coupé. Vérifie ton réseau (wifi faible, économie d'énergie) et réessaie.";
   return "Lecture impossible, réessaie avec une photo plus nette.";}
 // heures payées = total du calendrier de la fiche s'il est plus grand (ex. jour de récup payé oublié par la lecture)
 function heuresPayees(r){const hj=(r.jours||[]).reduce((a,j)=>a+(+j.heures||0),0);if(hj>(+r.heures||0)+0.25)r.heures=Math.round(hj*100)/100;return r}
@@ -1817,7 +1833,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.bcours){bourseCoursForm(b.dataset.bcours);return}
   if(b.dataset.bdelop){const B=S.bourse;B.ops=B.ops.filter(o=>o.id!==b.dataset.bdelop);const t=b.dataset.t;if(!B.ops.some(o=>o.titre===t)){B.titres=B.titres.filter(x=>x.id!==t);delete B.cours[t];closeSheet()}else bourseTitre(t);save();toast("Opération supprimée");return}
   if(b.dataset.bcrypto){bourseMajCrypto();return}
-  if(b.dataset.bscan){pickSource("Capture de ton appli de bourse (Trade Republic, Bolero, Revolut, Degiro, Binance…)",f=>scanBourse(f));return}
+  if(b.dataset.bscan){pickSource("Captures de ton appli de bourse (tu peux en choisir plusieurs)",fs=>scanBourse(fs),true);return}
   if(b.dataset.bimport){bourseImport();return}
   if(b.dataset.edit&&b.tagName!=="BUTTON"){const[ty,id]=b.dataset.edit.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.del2){const[k,id]=b.dataset.del2.split(":");
