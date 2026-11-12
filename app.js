@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=42";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=42";
+import * as CFG from "./firebase-config.js?v=43";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=43";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=42;
+const APP_VERSION=43;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -1394,6 +1394,7 @@ function renderBourse(){const el=$("bourseView");if(!el)return;const B=S.bourse,
   // carte d'accueil
   const hm=$("bourseHome");if(hm){hm.hidden=!B.titres.length;if(B.titres.length)hm.innerHTML=`<div class="k">📈 Portefeuille <span style="float:right;color:var(--mut)">›</span></div><div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:6px"><div class="v" style="font-size:22px">${eur(P.val)}</div><div class="bx-m" style="font-weight:800;color:${cl(P.total)}">${sg(P.total)} · ${pc(P.pct)}</div></div>`}
   const st=$("st-bourse");if(st)st.textContent=B.titres.length?`${eur(P.val)} · ${pc(P.pct)}`:"Actions, ETF, crypto";
+  {const sb=$("stBourseStats");if(sb)sb.textContent=B.titres.length?`${eur(P.val)} · ${sg(P.total)} (${pc(P.pct)})`:"Tes placements, cours, gains et taxes"}
   if(!B.titres.length){el.innerHTML=`${bHead()}<div class="card" style="text-align:center;padding:26px 18px"><div style="font-size:44px">📈</div><div style="font-weight:800;font-size:18px;margin-top:6px">Suis tes investissements</div>
     <p class="sub" style="margin-top:6px">ETF, actions, crypto : ce que tu as investi, ce que ça vaut aujourd'hui, tes gains, tes dividendes, la taxe boursière et tes plus-values, au même endroit.</p>
     ${model?`<button type="button" class="btn" data-bx="scan" style="margin-top:14px;width:100%">📸 Importer des captures de mon appli de bourse</button>`:""}
