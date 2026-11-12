@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=31";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=31";
+import * as CFG from "./firebase-config.js?v=32";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=32";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=31;
+const APP_VERSION=32;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -250,20 +250,21 @@ function render(){
   $("bToday").hidden=isNow;$("bToday").textContent="↩ Revenir à "+new Date().toLocaleDateString("fr-BE",{month:"long"});
   $("resteCard").querySelector(".k").textContent=isNow?"Reste à vivre ce mois":"Bilan de "+cur.toLocaleDateString("fr-BE",{month:"long"});
   const M=monthData(k), R=S.reglages, fx=fixesTotal();
-  const reste=M.recu+M.att-M.depPaye; // une dépense pas encore payée ne sort pas encore du compte
+  // argent réellement là : ce qui est reçu − ce qui est payé. « À recevoir » et « à payer » sont montrés à part.
+  const reste=M.recu-M.depPaye, prevu=reste+M.att-M.aPayer;
   $("reste").textContent=eur(reste);
   $("resteCard").classList.toggle("neg",reste<0);
-  $("resteSub").textContent=[M.att>0?`dont ${eur(M.att)} de paies encore attendues`:"revenus − dépenses payées",M.aPayer>0?`${eur(M.aPayer)} à payer pas encore déduits`:""].filter(Boolean).join(" · ");
+  $("resteSub").innerHTML=M.att>0||M.aPayer>0?[M.att>0?`<span style="color:var(--pos)">+ ${eur(M.att)} à recevoir</span>`:"",M.aPayer>0?`<span style="color:var(--out)">− ${eur(M.aPayer)} à payer</span>`:""].filter(Boolean).join(" · ")+`<br>→ <b>${eur(prevu)}</b> une fois tout reçu et payé`:"reçu − dépenses payées";
   $("recu").textContent=eur(M.recu);
   const nP=M.p.filter(x=>!x.autre).length;
-  $("attendu").textContent=[M.autre>0?`dont ${eur(M.autre)} d'autres rentrées`:`${nP} paie(s)`,M.att>0?`+ ${eur(M.att)} attendus`:""].filter(Boolean).join(" · ");
+  $("attendu").textContent=[M.autre>0?`dont ${eur(M.autre)} d'autres rentrées`:`${nP} paie(s)`,M.att>0?`+ ${eur(M.att)} à recevoir`:""].filter(Boolean).join(" · ");
   $("dep").textContent=eur(M.depPaye);
   $("depSub").textContent=M.aPayer>0?`payé · + ${eur(M.aPayer)} à payer (${M.nAPayer} facture${M.nAPayer>1?"s":""})`:`${eur(M.fix)} fixes · ${eur(M.var_)} variables`;
 
   // budget par jour
   $("jourCard").hidden=!isNow||(M.recu+M.att===0&&M.dep===0);
   if(isNow){const n=new Date(),dim=new Date(n.getFullYear(),n.getMonth()+1,0).getDate(),left=dim-n.getDate()+1;
-    const pj=reste/left;$("parJour").textContent=eur(pj);$("jourCard").querySelector(".k").textContent=pj<0?"Il te manque":"Tu peux dépenser";$("parJour").className="v "+(pj<0?"out":pj<10?"pend":"pos");
+    const pj=prevu/left; // par jour : on tient compte de ce qui va encore rentrer et sortir$("parJour").textContent=eur(pj);$("jourCard").querySelector(".k").textContent=pj<0?"Il te manque":"Tu peux dépenser";$("parJour").className="v "+(pj<0?"out":pj<10?"pend":"pos");
     $("jourSub").innerHTML=`par jour<br>${left} jour${left>1?"s":""} restant${left>1?"s":""}`;$("moisBar").style.width=((n.getDate()-1)/dim*100)+"%"}
 
   // alertes
@@ -342,8 +343,8 @@ function render(){
   const pm=[...M.pAll].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
     let cb="";if(p.detail&&!p.archive){const B=ctrlBilan(controlePaie(p.detail,m,p.id));cb=p.ctrlVu?'<span class="pill">✓ vérifiée</span>':B.bad?`<span class="pill r">❌ ${B.bad+B.warn} à vérifier</span>`:B.warn?`<span class="pill y">⚠️ ${B.warn} à vérifier</span>`:'<span class="pill ok">✅ contrôlée</span>'}
-    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||(p.autre?"Rentrée":"Paie")))}${p.autre?'<span class="pill">rentrée</span>':""}${cb}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":'<span class="pill y">attendue</span>'}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
-    `<span class="amt ${p.archive?"":p.recu?"pos":"pend"}" ${p.archive?"":`data-toggle="${p.id}"`} style="cursor:pointer;${p.archive?"color:var(--mut)":""}">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`,{i:p.autre?"💰":p.archive?"📚":"💶",c:p.archive?"pay arch":"pay"})}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / attendue.</div>`:vide("💶","Aucune paie ce mois.<br>Scanne ta fiche de paie ou ajoute-la à la main.");
+    return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||(p.autre?"Rentrée":"Paie")))}${p.autre?'<span class="pill">rentrée</span>':""}${cb}${p.archive?'<span class="pill">📚 historique</span>':p.recu?"":`<span class="pill y">à recevoir${p.date>today()?" · "+fmtD(p.date):""}</span>`}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,
+    `<span class="amt ${p.archive?"":p.recu?"pos":"pend"}" ${p.archive?"":`data-toggle="${p.id}"`} style="cursor:pointer;${p.archive?"color:var(--mut)":""}">${eur2(p.montant)}</span><button class="del" data-del="paies:${p.id}">×</button>`,{i:p.autre?"💰":p.archive?"📚":"💶",c:p.archive?"pay arch":"pay"})}).join("")+`<div class="sub" style="padding-top:8px">Touche une paie pour la modifier, ou son montant pour la marquer reçue / à recevoir.</div>`:vide("💶","Aucune paie ce mois.<br>Scanne ta fiche de paie ou ajoute-la à la main.");
 
   // fixes
   $("fixes").innerHTML=S.fixes.length?S.fixes.map(f=>row("fixe:"+f.id,`<b>${esc(f.nom)}</b>${f.jour?`<small>le ${esc(f.jour)} du mois</small>`:""}`,`<span class="amt out">${eur2(f.montant)}</span><button class="del" data-del="fixes:${f.id}">×</button>`,catIc(f.nom)==="💳"?"🔁":catIc(f.nom))).join("")+`<div class="row"><div class="l"><b>Total</b></div><span class="amt">${eur2(fx)}</span></div>`:vide("🔁","Loyer, assurance, téléphone, abonnements…<br>Ajoute ce qui tombe chaque mois.");
@@ -1166,14 +1167,14 @@ function openSheet(type,ctx,item,opts={}){
     ${it.detail?`<button type="button" class="btn sec" data-fdetail="${it.id}">🧾 Voir le détail du document</button>`:""}
     ${ed?(it.photo?`<div class="two"><button type="button" class="btn sec" data-photo="${it.photo}">🖼️ Voir la photo</button><button type="button" class="btn sec" data-attach="depenses:${it.id}">🔄 Remplacer</button></div>`:`<button type="button" class="btn sec" data-attach="depenses:${it.id}">📎 Joindre une photo / un PDF</button>`):""}
     <button class="btn">${ed?"Enregistrer":"Ajouter"}</button>${delBtn}</form>`,
-   paie:`${head(ed?"Modifier la paie":"Nouvelle paie")}
+   paie:`${head(ed?"Modifier la paie":opts.aRecevoir?"Argent à recevoir":"Nouvelle paie")}
     <form data-f="paie" data-id="${V("id")}">${S.missions.length?`<label>Mission<select name="mission" id="pMis"><option value="">— Aucune —</option>${missOpts}</select></label>`:""}
     <div class="two"><label>Heures prestées<input name="heures" id="pH" type="number" step="0.25" inputmode="decimal" placeholder="ex. 38" value="${V("heures")}"></label><label>Date<input name="date" type="date" value="${V("date",today())}" required></label></div>
     <div class="est" id="pEst">Indique les heures pour une estimation du net.</div>
     <label>Montant net (€)<input name="montant" id="pM" type="number" step="0.01" inputmode="decimal" required value="${V("montant")}" ${ed?'data-touched="1"':""}></label>
-    <label>Note<input name="note" placeholder="ex. semaine 45" value="${V("note")}"></label>
-    <label class="chk"><input type="checkbox" name="recu" ${!ed||it.recu?"checked":""}> Déjà reçue sur mon compte</label>
-    <label class="chk"><input type="checkbox" name="autre" ${it.autre?"checked":""}> 💰 Pas une paie (remboursement, virement d'un proche, vente, allocation…)</label>
+    <label>Note<input name="note" placeholder="${opts.aRecevoir?"ex. prime de fin d'année":"ex. semaine 45"}" value="${V("note")}"></label>
+    <label class="chk"><input type="checkbox" name="recu" ${ed?(it.recu?"checked":""):(opts.aRecevoir?"":"checked")}> Déjà reçue sur mon compte <small style="color:var(--mut)">(sinon : à recevoir, pas encore dans ton reste à vivre)</small></label>
+    <label class="chk"><input type="checkbox" name="autre" ${it.autre||opts.aRecevoir?"checked":""}> 💰 Pas une paie (prime, remboursement, virement d'un proche, vente, allocation…)</label>
     <label class="chk"><input type="checkbox" name="archive" ${it.archive?"checked":""}> 📚 Historique seulement (argent déjà dépensé, ne compte pas dans mon budget)</label>
     ${it.detail?`<button type="button" class="btn sec" data-detail="${it.id}">📄 Voir le détail de la fiche</button>`:""}
     ${ed?(it.photo?`<div class="two"><button type="button" class="btn sec" data-photo="${it.photo}">🖼️ Voir la photo</button><button type="button" class="btn sec" data-attach="paies:${it.id}">🔄 Remplacer</button></div>`:`<button type="button" class="btn sec" data-attach="paies:${it.id}">📎 Joindre la fiche (photo / PDF)</button>`):""}
@@ -1528,7 +1529,7 @@ function showScan(r){
    <form data-f="scan" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
     <div class="two"><label>Net à enregistrer (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${r.net??""}"></label><label>Date<input name="date" type="date" required value="${esc(date)}"></label></div>
     <label>Mission<select name="mission"><option value="">— Aucune —</option>${r.agence&&!match?`<option value="__new" selected>➕ Créer « ${esc(r.agence)}${r.client?" · "+esc(r.client):""} »</option>`:""}${S.missions.map(m=>`<option value="${m.id}" ${match&&match.id===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("")}</select></label>
-    <label class="chk"><input type="checkbox" name="recu" checked> Déjà reçue sur mon compte</label>
+    <label class="chk"><input type="checkbox" name="recu" ${date>today()?"":"checked"}> Déjà reçue sur mon compte <small style="color:var(--mut)">(décoche si pas encore touchée : elle sera « à recevoir »)</small></label>
     <label class="chk"><input type="checkbox" name="archive" ${vieille?"checked":""}> 📚 Ancienne fiche : historique seulement (ne compte pas comme argent disponible)</label>
     ${newDays.length?`<label class="chk"><input type="checkbox" name="pointer" checked> Ajouter ${newDays.length} jour(s) au pointage (${fmtN(sum(newDays,j=>j.heures))} h)</label>`:""}
     ${r.cheques_repas_nombre?`<label class="chk"><input type="checkbox" name="crAdd" checked> Ajouter ${r.cheques_repas_nombre} chèque(s)-repas${r.cheques_repas_valeur?" de "+eur2(r.cheques_repas_valeur):""}</label>`:""}
@@ -1659,7 +1660,7 @@ document.addEventListener("click",e=>{
   if(b.dataset.v){if(b.dataset.v==="set")renderSettings();document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.v===b.dataset.v));
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));
     $("fab").style.display=b.dataset.v==="set"?"none":"block";$("monthBar").style.display=b.dataset.v==="set"?"none":"";window.scrollTo(0,0);return}
-  if(b.dataset.open){const o=b.dataset.open;if(o==="retrait")openSheet("epargne",null,null,{retrait:true});else openSheet(o,null,null,{amt:b.dataset.amt,target:b.dataset.target});return}
+  if(b.dataset.open){const o=b.dataset.open;if(o==="retrait")openSheet("epargne",null,null,{retrait:true});else if(o==="arecevoir")openSheet("paie",null,null,{aRecevoir:true});else openSheet(o,null,null,{amt:b.dataset.amt,target:b.dataset.target});return}
   if(b.dataset.paie){openSheet("paie",b.dataset.paie);return}
   if(b.hasAttribute("data-close")){closeSheet();return}
   if(b.dataset.del){const[k,id]=b.dataset.del.split(":");

@@ -440,9 +440,10 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 
   <!-- PAIES & MISSIONS -->
   <section class="view" id="v-rev">
-    <div class="quick" style="grid-template-columns:repeat(3,1fr);margin-top:2px">
+    <div class="quick" style="grid-template-columns:repeat(auto-fit,minmax(80px,1fr));margin-top:2px">
       <button type="button" class="scanBtn" hidden><span class="qi">📷</span>Scanner une fiche</button>
       <button type="button" data-open="paie"><span class="qi">✍️</span>Paie à la main</button>
+      <button type="button" data-open="arecevoir"><span class="qi">⏳</span>À recevoir</button>
       <button type="button" id="bHisto" hidden><span class="qi">📚</span>Anciennes fiches</button>
     </div>
     <h2>Paies du mois</h2>
@@ -645,6 +646,6 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=31"></script>
+<script type="module" src="app.js?v=32"></script>
 </body>
 </html>
