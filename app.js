@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=34";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=34";
+import * as CFG from "./firebase-config.js?v=35";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=35";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=34;
+const APP_VERSION=35;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -1253,6 +1253,14 @@ function openSheet(type,ctx,item,opts={}){
   if(!ed)setTimeout(()=>$("sheet").querySelector("input:not([type=hidden])")?.focus(),80);
 }
 function closeSheet(){$("sheetBg").classList.remove("open");if(scanCtl){scanCtl.abort();scanCtl=null}}
+// l'IA lit parfois la bonne date avec la mauvaise année (ex. 10/11/2025 au lieu de 2026) : la paie part alors dans un vieux mois.
+// Si la même date dans l'année en cours tombe dans les 60 derniers jours (ou la semaine qui vient), on corrige.
+function corrigeAnnee(r){const t=new Date(),y=t.getFullYear();let lu=null;
+  const fx=d=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(d||""))return d;const n=new Date(d+"T12:00");if(Math.abs(n-t)/864e5<200)return d;
+    for(const yy of [y,y-1]){const c=yy+d.slice(4),j=(new Date(c+"T12:00")-t)/864e5;if(j>=-60&&j<=7){lu=lu||d.slice(0,4);return c}}return d};
+  ["periode_debut","periode_fin","date_paiement","date_etablissement"].forEach(k=>{r[k]=fx(r[k])});
+  if(Array.isArray(r.jours))r.jours.forEach(j=>{j.date=fx(j.date)});
+  return lu}
 function openRaw(h){$("sheet").innerHTML=h;$("sheetBg").classList.add("open")}
 
 /* ---------- scan fiche de paie ---------- */
@@ -1524,6 +1532,7 @@ let scanCtrl=null;
 function showScan(r){
   const ag=(r.agence||"").toLowerCase();
   const match=S.missions.find(m=>ag&&m.agence&&(ag.includes(m.agence.toLowerCase())||m.agence.toLowerCase().includes(ag.split(" ")[0])));
+  const anCorr=corrigeAnnee(r);
   // une fiche de régularisation (période ancienne, établie récemment) est payée vers sa date d'établissement, pas à la fin de la période
   const etab=/^\d{4}-\d{2}-\d{2}$/.test(r.date_etablissement||"")&&r.date_etablissement<=today()?r.date_etablissement:null;
   const date=r.date_paiement||(etab&&(!r.periode_fin||etab>r.periode_fin)?etab:r.periode_fin)||today();const vieille=date<mkey(new Date())+"-01";
@@ -1533,6 +1542,8 @@ function showScan(r){
   const W=[];const CI=controlePaie(r,match);scanCtrl={r,m:match,I:CI};
   const newDays=r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date));
   const exP=r.net?S.paies.find(p=>memePaie(p,date,r.net)):null;
+  if(anCorr)W.push(`📅 L'année lue sur la fiche semblait fausse (${anCorr}) : je l'ai corrigée en ${new Date().getFullYear()}. Vérifie la date ci-dessous.`);
+  if(date.slice(0,7)!==mkey(new Date()))W.push(`📅 Cette paie sera rangée en <b>${new Date(date+"T12:00").toLocaleDateString("fr-BE",{month:"long",year:"numeric"})}</b>${vieille?" comme ancienne fiche":""}. Si elle est de ce mois-ci, change la date ci-dessous.`);
   if(exP&&exP.detail)W.unshift(`🔁 Cette fiche semble <b>déjà enregistrée</b> (${eur2(exP.montant)} le ${fmtD(exP.date)}). L'enregistrer créerait un doublon.`);
   const ctrl=(W.length?`<div class="warnbox">${W.join("<br>")}</div>`:"")+ctrlHTML(CI);
   openRaw(`<h3>Ta fiche de paie <button class="del" data-close>×</button></h3>${ctrl}${detailHTML(r)}
