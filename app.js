@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=37";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=37";
+import * as CFG from "./firebase-config.js?v=38";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=38";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=37;
+const APP_VERSION=38;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -331,7 +331,7 @@ function render(){
   // catégories
   const c={};M.d.forEach(x=>c[x.cat]=(c[x.cat]||0)+(+x.montant||0));
   const ce=Object.entries(c).sort((a,b)=>b[1]-a[1]);
-  $("cats").innerHTML=ce.length?ce.map(([n,v])=>`<div class="cat"><span>${esc(n)}</span><b>${eur(v)} <small style="color:var(--mut);font-weight:600">${Math.round(v/M.var_*100)}%</small></b></div><div class="bar" style="margin-top:4px;height:6px"><i style="width:${v/ce[0][1]*100}%"></i></div>`).join(""):`<div class="empty">Aucune dépense ce mois</div>`;
+  $("cats").innerHTML=ce.length?ce.map(([n,v])=>`<div class="cat" data-stat="cat" data-c="${esc(n)}" style="cursor:pointer"><span>${esc(n)} ›</span><b>${eur(v)} <small style="color:var(--mut);font-weight:600">${Math.round(v/M.var_*100)}%</small></b></div><div class="bar" style="margin-top:4px;height:6px" data-stat="cat" data-c="${esc(n)}"><i style="width:${v/ce[0][1]*100}%"></i></div>`).join(""):`<div class="empty">Aucune dépense ce mois</div>`;
 
   // missions
   const ms2=[...S.missions].sort((a,b)=>(b.debut||"").localeCompare(a.debut||""));
@@ -1286,6 +1286,42 @@ function corrigeAnnee(r){const t=new Date(),y=t.getFullYear();let lu=null;
   ["periode_debut","periode_fin","date_paiement","date_etablissement"].forEach(k=>{r[k]=fx(r[k])});
   if(Array.isArray(r.jours))r.jours.forEach(j=>{j.date=fx(j.date)});
   return lu}
+/* ---------- détail des chiffres de l'accueil (touche une carte) ---------- */
+function openStat(kind,c){
+  const k=mkey(cur),M=monthData(k),mois=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
+  const lieF=x=>x.fixe&&S.fixes.some(f=>f.id===x.fixe);
+  const pRow=p=>{const m=S.missions.find(x=>x.id===p.mission);return row("paie:"+p.id,`<b>${p.photo?"🖼️ ":p.detail?"📄 ":""}${esc(m?(m.client||m.agence):(p.note||(p.autre?"Rentrée":"Paie")))}${p.recu?"":`<span class="pill y">à recevoir</span>`}</b><small>${fmtD(p.date)}${p.heures?" · "+fmtN(p.heures)+" h":""}${p.note&&m?" · "+esc(p.note):""}</small>`,`<span class="amt ${p.recu?"pos":"pend"}">+${eur2(p.montant)}</span>`,{i:p.autre?"💰":"💶",c:"pay"})};
+  const dRow=d=>row("depense:"+d.id,`<b>${d.photo?"🖼️ ":d.detail?"🧾 ":""}${esc(d.note||d.cat)}${d.paye===false?`<span class="pill ${d.echeance&&d.echeance<today()?"r":"y"}">à payer${d.echeance?" · "+fmtD(d.echeance):""}</span>`:""}</b><small>${fmtD(d.date)} · ${esc(d.cat)}</small>`,`<span class="amt ${d.paye===false?"pend":"out"}">−${eur2(d.montant)}</span>`,catIc(d.cat));
+  const fRow=f=>{const nonPaye=M.all.some(x=>x.fixe===f.id&&x.paye===false);return row("fixe:"+f.id,`<b>${esc(f.nom)}${nonPaye?'<span class="pill y">à payer</span>':""}</b><small>charge fixe${f.jour?" · le "+esc(f.jour)+" du mois":""}</small>`,`<span class="amt ${nonPaye?"pend":"out"}">−${eur2(f.montant)}</span>`,"🔁")};
+  const bloc=(t,tot,html,vide_)=>`<div class="day" style="margin-top:14px;text-transform:none"><span>${t}</span><span>${tot}</span></div><div class="card" style="background:var(--card2)">${html||`<div class="empty">${vide_}</div>`}</div>`;
+  const ln=(a,b,cl="")=>`<div class="ln"><span>${a}</span><b class="${cl}" style="text-align:right">${b}</b></div>`;
+  const byDate=(a,b)=>(b.date||"").localeCompare(a.date||"");
+  let h="";
+  if(kind==="recu"){const R=M.p.filter(p=>p.recu).sort(byDate),A=M.p.filter(p=>!p.recu).sort(byDate);
+    h=`<h3>Reçu en ${mois}</h3><p class="sub">Paies et autres rentrées du mois. Touche une ligne pour la modifier.</p>`
+     +bloc("✅ Déjà reçu",eur2(M.recu),R.map(pRow).join(""),"Rien de reçu ce mois-ci.")
+     +bloc("⏳ À recevoir",eur2(M.att),A.map(pRow).join(""),"Rien en attente.")
+     +(M.arch?`<p class="sub" style="margin-top:10px">📚 ${eur2(M.arch)} de fiches « historique » ne sont pas comptées.</p>`:"")}
+  else if(kind==="dep"){const V=M.d.filter(d=>d.paye!==false).sort(byDate),AP=M.all.filter(d=>d.paye===false).sort(byDate),cc={};
+    V.forEach(d=>cc[d.cat]=(cc[d.cat]||0)+(+d.montant||0));
+    const fixPaye=M.fix-S.fixes.filter(f=>M.all.some(x=>x.fixe===f.id&&x.paye===false)).reduce((a,f)=>a+(+f.montant||0),0);
+    h=`<h3>Dépensé en ${mois}</h3><p class="sub">Ce qui est déjà sorti de ton compte, puis ce qui reste à payer.</p>`
+     +bloc("🔁 Charges fixes",eur2(fixPaye)+" payé",S.fixes.map(fRow).join(""),"Aucune charge fixe.")
+     +bloc("💸 Dépenses payées",eur2(sum(V,d=>d.montant)),(Object.keys(cc).length>1?`<div style="padding:4px 0 8px">${Object.entries(cc).sort((a,b)=>b[1]-a[1]).map(([n,v])=>ln(catIc(n)+" "+esc(n),eur2(v))).join("")}</div>`:"")+V.map(dRow).join(""),"Aucune dépense payée.")
+     +bloc("🧾 À payer",eur2(M.aPayer),AP.map(dRow).join(""),"Aucune facture en attente.")}
+  else if(kind==="reste"){const reste=M.recu-M.depPaye,prevu=reste+M.att-M.aPayer;
+    h=`<h3>Reste à vivre · ${mois}</h3><div class="card" style="background:var(--card2);margin-top:10px">`
+     +ln("Reçu",`+${eur2(M.recu)}`,"pos")+ln("Dépensé (payé)",`−${eur2(M.depPaye)}`,"out")+`<div style="border-top:1px solid var(--line);margin:6px 0"></div>`+ln("<b>Reste à vivre</b>",eur2(reste),reste<0?"out":"pos")
+     +(M.att||M.aPayer?ln("À recevoir",`+${eur2(M.att)}`,"pos")+ln("À payer",`−${eur2(M.aPayer)}`,"out")+`<div style="border-top:1px solid var(--line);margin:6px 0"></div>`+ln("<b>Une fois tout reçu et payé</b>",eur2(prevu),prevu<0?"out":"pos"):"")+`</div>
+     <div class="two" style="margin-top:12px"><button type="button" class="btn sec" data-stat="recu">💶 Voir le reçu</button><button type="button" class="btn sec" data-stat="dep">💸 Voir le dépensé</button></div>`}
+  else if(kind==="week"){const t=today(),d7=new Date();d7.setDate(d7.getDate()-6);const a7=iso(d7);
+    const W=S.depenses.filter(x=>x.date>=a7&&x.date<=t&&!lieF(x)).sort(byDate),P=S.paies.filter(p=>p.date>=a7&&p.date<=t&&!p.archive).sort(byDate);
+    h=`<h3>Tes 7 derniers jours</h3><p class="sub">Du ${fmtD(a7)} à aujourd'hui.</p>`+bloc("💶 Reçu",eur2(sum(P,p=>p.montant)),P.map(pRow).join(""),"Rien reçu cette semaine.")+bloc("💸 Dépensé",eur2(sum(W,d=>d.montant)),W.map(dRow).join(""),"Aucune dépense cette semaine.")}
+  else if(kind==="cat"){const L=M.d.filter(d=>d.cat===c||(c==="Autres"&&!0)).sort(byDate);
+    const top5=(()=>{const o={};M.d.forEach(x=>o[x.cat]=(o[x.cat]||0)+(+x.montant||0));return Object.entries(o).sort((a,b)=>b[1]-a[1]).slice(0,5).map(x=>x[0])})();
+    const LL=c==="Autres"?M.d.filter(d=>!top5.includes(d.cat)).sort(byDate):M.d.filter(d=>d.cat===c).sort(byDate);
+    h=`<h3>${catIc(c)} ${esc(c)} · ${mois}</h3>`+bloc(`${LL.length} dépense(s)`,eur2(sum(LL,d=>d.montant)),LL.map(dRow).join(""),"Aucune dépense.")}
+  openRaw(h.replace(/^<h3>(.*?)<\/h3>/,`<h3>$1 <button class="del" type="button" data-close>×</button></h3>`))}
 function openRaw(h){$("sheet").innerHTML=h;$("sheetBg").classList.add("open")}
 
 /* ---------- scan fiche de paie ---------- */
@@ -1647,7 +1683,7 @@ document.addEventListener("submit",e=>{
 
 document.addEventListener("change",e=>{const k=e.target.dataset&&e.target.dataset.admin;if(!k)return;if(e.target.checked)S.adminDone[k]=1;else delete S.adminDone[k];save()});
 document.addEventListener("click",e=>{
-  const b=e.target.closest("button,[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day],[data-dups],[data-fisc]");
+  const b=e.target.closest("button,[data-stat],[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day],[data-dups],[data-fisc]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
   if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";const T={facture:"Scanner une facture / un ticket",contrat:"Scanner un contrat",paie:"Scanner une fiche de paie",f281:"Scanner une fiche fiscale 281.10"},F={facture:scanFacture,contrat:scanContrat,paie:scanFile,f281:scan281};pickSource(T[m]||T.paie,f=>(F[m]||scanFile)(f));return}
@@ -1666,6 +1702,7 @@ document.addEventListener("click",e=>{
     S.cats=cats().filter(x=>x!==c);save();toast("Catégorie supprimée");return}
   if(b.dataset.cat){document.querySelectorAll("#catChips button").forEach(x=>x.classList.toggle("on",x===b));$("catIn").value=b.dataset.cat;return}
   if(b.dataset.emo){document.querySelectorAll("#emoChips button").forEach(x=>x.classList.toggle("on",x===b));$("emoIn").value=b.dataset.emo;return}
+  if(b.dataset.stat){openStat(b.dataset.stat,b.dataset.c);return}
   if(b.dataset.edit&&b.tagName!=="BUTTON"){const[ty,id]=b.dataset.edit.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.del2){const[k,id]=b.dataset.del2.split(":");
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Appuie encore pour confirmer";setTimeout(()=>{if(b.isConnected){b.dataset.confirm="";b.textContent="Supprimer"}},3000);return}

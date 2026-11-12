@@ -87,6 +87,8 @@ nav button.on{color:var(--acc);background:var(--card)}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--mut);margin-top:8px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .cat{display:flex;justify-content:space-between;font-size:13px;margin-top:8px}
+#resteCard>.k::after,.card.mini[data-stat]>.k::after{content:" ›";opacity:.6}
+[data-stat]:active{transform:scale(.985)}
 .est{background:var(--card2);border-radius:12px;padding:12px;font-size:13px;color:var(--mut)}
 .est b{color:var(--pos);font-size:18px}
 .view{display:none}.view.on{display:block}
@@ -378,7 +380,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 
   <!-- ACCUEIL -->
   <section class="view on" id="v-home">
-    <div class="card big" id="resteCard" style="margin-bottom:12px">
+    <div class="card big" id="resteCard" style="margin-bottom:12px;cursor:pointer" data-stat="reste">
       <div class="k">Reste à vivre ce mois</div>
       <div class="v" id="reste">0 €</div>
       <div class="sub" id="resteSub"></div>
@@ -388,8 +390,8 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
       </div>
     </div>
     <div class="grid">
-      <div class="card mini"><div class="ico in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></div><div class="k">Reçu</div><div class="v pos" id="recu">0 €</div><div class="sub" id="attendu"></div></div>
-      <div class="card mini"><div class="ico outc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div><div class="k">Dépensé</div><div class="v out" id="dep">0 €</div><div class="sub" id="depSub"></div></div>
+      <div class="card mini" data-stat="recu" style="cursor:pointer"><div class="ico in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></div><div class="k">Reçu</div><div class="v pos" id="recu">0 €</div><div class="sub" id="attendu"></div></div>
+      <div class="card mini" data-stat="dep" style="cursor:pointer"><div class="ico outc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div><div class="k">Dépensé</div><div class="v out" id="dep">0 €</div><div class="sub" id="depSub"></div></div>
     </div>
     <div class="quick">
       <button type="button" data-open="depense"><span class="qi">💸</span>Dépense</button>
@@ -400,8 +402,8 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 
     <div id="alerts"></div>
 
-    <div class="card" id="weekCard" hidden>
-      <div class="k">📅 Ta semaine</div>
+    <div class="card" id="weekCard" hidden data-stat="week" style="cursor:pointer">
+      <div class="k">📅 Ta semaine <span style="float:right;color:var(--mut)">›</span></div>
       <div id="weekBody"></div>
     </div>
 
@@ -646,6 +648,6 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=37"></script>
+<script type="module" src="app.js?v=38"></script>
 </body>
 </html>
