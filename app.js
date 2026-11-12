@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=33";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=33";
+import * as CFG from "./firebase-config.js?v=34";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=34";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=33;
+const APP_VERSION=34;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -1311,7 +1311,7 @@ function aiErr(e){const m=(String(e&&e.code||"")+" "+String(e&&e.message||e||"")
 function heuresPayees(r){const hj=(r.jours||[]).reduce((a,j)=>a+(+j.heures||0),0);if(hj>(+r.heures||0)+0.25)r.heures=Math.round(hj*100)/100;return r}
 const PROMPT=`Tu lis la photo ou capture d'écran d'une fiche de paie d'un travailleur intérimaire (probablement en Belgique ou en France).
 Extrais les informations et réponds UNIQUEMENT avec un objet JSON de cette forme :
-{"agence":"nom de l'agence d'intérim ou employeur","client":"entreprise utilisatrice / lieu de mission ou null","periode_debut":"YYYY-MM-DD ou null","periode_fin":"YYYY-MM-DD ou null","date_paiement":"YYYY-MM-DD ou null","heures":nombre TOTAL d'heures payées sur la fiche ou null (heures prestées + heures de récupération payées + jours fériés / petits chômages / congés payés en heures ; ex. 31 h prestées + 8 h de récup payées = 39),"taux_horaire_brut":nombre ou null,"brut":salaire brut total ou null,"net":montant net à payer / viré sur le compte ou null,
+{"agence":"nom de l'agence d'intérim ou employeur","client":"entreprise utilisatrice / lieu de mission ou null","periode_debut":"YYYY-MM-DD ou null","periode_fin":"YYYY-MM-DD ou null","date_paiement":"YYYY-MM-DD ou null","date_etablissement":"YYYY-MM-DD date où la fiche a été établie / éditée ou null","heures":nombre TOTAL d'heures payées sur la fiche ou null (heures prestées + heures de récupération payées + jours fériés / petits chômages / congés payés en heures ; ex. 31 h prestées + 8 h de récup payées = 39),"taux_horaire_brut":nombre ou null,"brut":salaire brut total ou null,"net":montant net à payer / viré sur le compte ou null,
 "lignes":[{"libelle":"intitulé court en français","montant":nombre positif,"type":"gain" | "retenue" | "info"}],
 "avantages":"chèques-repas, éco-chèques, primes, etc. en une phrase, ou null","resume":"2 phrases simples qui expliquent la fiche (d'où vient la différence entre brut et net)",
 "cheques_repas_nombre":nombre de chèques-repas attribués ou null,"cheques_repas_valeur":valeur faciale d'un chèque-repas ou null,
@@ -1388,8 +1388,8 @@ async function scanFile(f){lastFile=f;
     if(!r||typeof r!=="object"||r.erreur){openRaw(`<h3>Oups <button class="del" data-close>×</button></h3><div class="est">${esc(r&&r.erreur||"Je n'ai pas reconnu de fiche de paie.")}</div><button class="btn scanBtn" style="margin-top:12px">Réessayer avec une autre photo</button>`);return}
     r.lignes=Array.isArray(r.lignes)?r.lignes.slice(0,25).map(l=>({libelle:String(l.libelle||"").slice(0,80),montant:Math.abs(+l.montant||0),type:["gain","retenue","info"].includes(l.type)?l.type:"info"})):[];
     ["brut","net","heures","taux_horaire_brut"].forEach(k=>{if(r[k]!=null&&r[k]!=="")r[k]=+r[k]||null});
-    ["agence","client","periode_debut","periode_fin","date_paiement","avantages","resume"].forEach(k=>{r[k]=r[k]==null?null:String(r[k]).slice(0,400)});
-    ["periode_debut","periode_fin","date_paiement"].forEach(k=>{if(r[k]&&!/^\d{4}-\d{2}-\d{2}$/.test(r[k]))r[k]=null});
+    ["agence","client","periode_debut","periode_fin","date_paiement","date_etablissement","avantages","resume"].forEach(k=>{r[k]=r[k]==null?null:String(r[k]).slice(0,400)});
+    ["periode_debut","periode_fin","date_paiement","date_etablissement"].forEach(k=>{if(r[k]&&!/^\d{4}-\d{2}-\d{2}$/.test(r[k]))r[k]=null});
     r.jours=Array.isArray(r.jours)?r.jours.filter(j=>/^\d{4}-\d{2}-\d{2}$/.test(j.date)&&+j.heures>0).slice(0,31).map(j=>({date:j.date,heures:+j.heures})):[];
     heuresPayees(r);
     ["cheques_repas_nombre","cheques_repas_valeur"].forEach(k=>{r[k]=r[k]!=null&&r[k]!==""?+r[k]||null:null});
@@ -1524,7 +1524,11 @@ let scanCtrl=null;
 function showScan(r){
   const ag=(r.agence||"").toLowerCase();
   const match=S.missions.find(m=>ag&&m.agence&&(ag.includes(m.agence.toLowerCase())||m.agence.toLowerCase().includes(ag.split(" ")[0])));
-  const date=r.date_paiement||r.periode_fin||today();const vieille=date<mkey(new Date())+"-01";
+  // une fiche de régularisation (période ancienne, établie récemment) est payée vers sa date d'établissement, pas à la fin de la période
+  const etab=/^\d{4}-\d{2}-\d{2}$/.test(r.date_etablissement||"")&&r.date_etablissement<=today()?r.date_etablissement:null;
+  const date=r.date_paiement||(etab&&(!r.periode_fin||etab>r.periode_fin)?etab:r.periode_fin)||today();const vieille=date<mkey(new Date())+"-01";
+  // on ne propose de créer une mission que pour une fiche avec des heures, sur une période récente
+  const recente=!r.periode_fin||(new Date()-new Date(r.periode_fin+"T12:00"))/864e5<=45, nouvMis=!!(r.agence&&!match&&+r.heures>0&&recente);
   const ratio=r.brut&&r.net?Math.round(r.net/r.brut*100):null;
   const W=[];const CI=controlePaie(r,match);scanCtrl={r,m:match,I:CI};
   const newDays=r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date));
@@ -1534,7 +1538,7 @@ function showScan(r){
   openRaw(`<h3>Ta fiche de paie <button class="del" data-close>×</button></h3>${ctrl}${detailHTML(r)}
    <form data-f="scan" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
     <div class="two"><label>Net à enregistrer (€)<input name="montant" type="number" step="0.01" inputmode="decimal" required value="${r.net??""}"></label><label>Date<input name="date" type="date" required value="${esc(date)}"></label></div>
-    <label>Mission<select name="mission"><option value="">— Aucune —</option>${r.agence&&!match?`<option value="__new" selected>➕ Créer « ${esc(r.agence)}${r.client?" · "+esc(r.client):""} »</option>`:""}${S.missions.map(m=>`<option value="${m.id}" ${match&&match.id===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("")}</select></label>
+    <label>Mission<select name="mission"><option value="">— Aucune —</option>${r.agence&&!match?`<option value="__new" ${nouvMis?"selected":""}>➕ Créer « ${esc(r.agence)}${r.client?" · "+esc(r.client):""} »</option>`:""}${S.missions.map(m=>`<option value="${m.id}" ${match&&match.id===m.id?"selected":""}>${esc(m.client||m.agence)}</option>`).join("")}</select></label>
     <label class="chk"><input type="checkbox" name="recu" ${date>today()?"":"checked"}> Déjà reçue sur mon compte <small style="color:var(--mut)">(décoche si pas encore touchée : elle sera « à recevoir »)</small></label>
     <label class="chk"><input type="checkbox" name="archive" ${vieille?"checked":""}> 📚 Ancienne fiche : historique seulement (ne compte pas comme argent disponible)</label>
     ${newDays.length?`<label class="chk"><input type="checkbox" name="pointer" checked> Ajouter ${newDays.length} jour(s) au pointage (${fmtN(sum(newDays,j=>j.heures))} h)</label>`:""}
@@ -1550,7 +1554,7 @@ document.addEventListener("submit",e=>{
   const d=Object.fromEntries(new FormData(f));d.id=uid();
   const t=f.dataset.f;
   if(t==="scan"&&scanRes){const r=scanRes;let mid=d.mission;
-    if(mid==="__new"){mid=uid();S.missions.push({id:mid,agence:r.agence||"Agence",client:r.client||"",debut:r.periode_debut||d.date,fin:"",taux:r.taux_horaire_brut||0})}
+    if(mid==="__new"){mid=uid();S.missions.push({id:mid,agence:r.agence||"Agence",client:r.client||"",debut:r.periode_debut||d.date,fin:r.periode_fin&&r.periode_fin<today()?r.periode_fin:"",taux:r.taux_horaire_brut||0})}
     else if(mid){const m=S.missions.find(x=>x.id===mid);if(m&&!m.taux&&r.taux_horaire_brut)m.taux=r.taux_horaire_brut}
     if(f.ratio&&f.ratio.checked&&r.brut&&r.net)S.reglages.ratio=Math.round(r.net/r.brut*100);
     if(f.pointer&&f.pointer.checked)r.jours.filter(j=>!S.pointage.some(x=>x.date===j.date)).forEach(j=>S.pointage.push({id:uid(),mission:mid||"",date:j.date,heures:j.heures,type:"normal"}));
