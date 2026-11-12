@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=38";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=38";
+import * as CFG from "./firebase-config.js?v=39";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=39";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=38;
+const APP_VERSION=39;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -16,7 +16,7 @@ function hideSplash(){if(splashGone)return;splashGone=true;const el=document.get
 setTimeout(hideSplash,6000);
 const DEFAULT_CATS=["Courses","Transport","Carburant","Loisirs","Santé","Vêtements","Maison","Resto","Cadeaux","Autre"];
 const cats=()=>(S.cats&&S.cats.length?S.cats:DEFAULT_CATS);
-const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],pointage:[],cr:[],dettes:[],fiches281:[],defi:[],cats:null,reglages:{epargne:0,pct:10,mois:3,ratio:78,statut:"ouvrier",domicile:"",conso:6.5,carbu:1.8},adminDone:{},subsIgnore:[]};
+const DEF={missions:[],paies:[],depenses:[],fixes:[],objectifs:[],budgets:{},epargneLog:[],pointage:[],cr:[],dettes:[],fiches281:[],defi:[],cats:null,reglages:{epargne:0,pct:10,mois:3,ratio:78,statut:"ouvrier",domicile:"",conso:6.5,carbu:1.8},adminDone:{},subsIgnore:[],bourse:{titres:[],ops:[],cours:{}}};
 let S=JSON.parse(JSON.stringify(DEF));
 let cur=new Date();cur.setDate(1);
 const $=id=>document.getElementById(id);
@@ -40,7 +40,7 @@ function normalize(d){d=d||{};const n=normalize0(d);["paies","depenses","pointag
   n.paies.forEach(p=>reparerAnnee(p,n.missions));
   n.paies.forEach(p=>{if(p.detail&&Array.isArray(p.detail.jours)&&!p.archive){const h=heuresPayees({heures:p.detail.heures,jours:p.detail.jours}).heures;if(h&&h>(+p.heures||0)+0.25){p.heures=h;p.detail.heures=h}}}); // fiches déjà scannées : on rattrape les heures de récup payées
   return n}
-function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],fiches281:d.fiches281||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
+function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],fiches281:d.fiches281||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],bourse:Object.assign({titres:[],ops:[],cours:{}},d.bourse||{}),reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
 const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
@@ -342,6 +342,7 @@ function render(){
     <small>${esc(m.agence)} · ${fmtD(m.debut)}${m.fin?" → "+fmtD(m.fin):" → ?"}${m.taux?" · "+eurT(m.taux)+"/h":""}</small><br><small>Reçu : ${eur(missionPaid(m))}${h?" · "+fmtN(h)+" h":""}${+m.km>0?" · 🚗 "+fmtN(m.km)+" km ≈ "+eur2(coutJour(m))+"/j":""}</small>`,
     `<button class="btn sm" data-paie="${m.id}">+ Paie</button><button class="del" data-del="missions:${m.id}">×</button>`)}).join(""):`<div class="empty">Aucune mission</div>`;
 
+  try{renderBourse()}catch(e){console.error(e)}
   // paies
   const pm=[...M.pAll].sort((a,b)=>b.date.localeCompare(a.date));
   $("paies").innerHTML=pm.length?pm.map(p=>{const m=S.missions.find(x=>x.id===p.mission);
@@ -1286,6 +1287,74 @@ function corrigeAnnee(r){const t=new Date(),y=t.getFullYear();let lu=null;
   ["periode_debut","periode_fin","date_paiement","date_etablissement"].forEach(k=>{r[k]=fx(r[k])});
   if(Array.isArray(r.jours))r.jours.forEach(j=>{j.date=fx(j.date)});
   return lu}
+/* ---------- bourse : suivi des placements (prix notés à la main, crypto mise à jour via CoinGecko) ---------- */
+const BTYPES={etf:"📊 ETF / fonds",action:"🏢 Action",crypto:"🪙 Crypto"};
+const CRYPTOS=[["bitcoin","Bitcoin (BTC)"],["ethereum","Ethereum (ETH)"],["solana","Solana (SOL)"],["ripple","XRP"],["binancecoin","BNB"],["cardano","Cardano (ADA)"],["dogecoin","Dogecoin (DOGE)"],["tether","Tether (USDT)"],["usd-coin","USDC"],["chainlink","Chainlink (LINK)"],["polkadot","Polkadot (DOT)"],["litecoin","Litecoin (LTC)"]];
+// position d'un titre : quantité, coût restant (méthode du prix moyen), gains réalisés sur les ventes
+function boursePos(t){const B=S.bourse;let q=0,cout=0,real=0,verse=0;
+  B.ops.filter(o=>o.titre===t.id).sort((a,b)=>(a.date||"").localeCompare(b.date||"")).forEach(o=>{const qq=+o.qte||0,px=+o.prix||0,fr=+o.frais||0;
+    if(o.sens==="vente"){const part=q>0?cout*Math.min(1,qq/q):0;real+=qq*px-fr-part;cout-=part;q=Math.max(0,q-qq)}else{cout+=qq*px+fr;q+=qq;verse+=qq*px+fr}});
+  const c=B.cours[t.id],last=[...B.ops].filter(o=>o.titre===t.id).sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0];
+  const prix=c&&+c.prix>0?+c.prix:last?+last.prix:0,dateC=c&&+c.prix>0?c.date:last?last.date:"";
+  const val=q*prix;return{q,cout,real,verse,prix,dateC,manuel:!(c&&+c.prix>0),val,gain:val-cout,pct:cout>0?(val-cout)/cout*100:0}}
+const qFmt=n=>(+n||0).toLocaleString("fr-BE",{maximumFractionDigits:8});
+const sg=n=>(n>=0?"+":"−")+eur2(Math.abs(n));
+function renderBourse(){const el=$("bourseCard");if(!el)return;const B=S.bourse,T=B.titres.map(t=>({t,p:boursePos(t)}));
+  const inv=sum(T,x=>x.p.cout),val=sum(T,x=>x.p.val),real=sum(T,x=>x.p.real),g=val-inv;
+  const st=$("st-bourse");if(st)st.textContent=T.length?`${eur(val)} · ${g>=0?"+":"−"}${eur(Math.abs(g))}`:"Suis tes actions, ETF et cryptos";
+  const hasCrypto=B.titres.some(t=>t.type==="crypto"&&t.cg);
+  el.innerHTML=(T.length?`<div class="two"><div><div class="sub">Investi</div><div class="v" style="font-size:20px">${eur(inv)}</div></div><div><div class="sub">Valeur actuelle</div><div class="v ${g>=0?"pos":"out"}" style="font-size:20px">${eur(val)}</div><div class="sub" style="color:${g>=0?"var(--pos)":"var(--out)"}">${sg(g)}${inv>0?` (${g>=0?"+":""}${(g/inv*100).toFixed(1).replace(".",",")} %)`:""}</div></div></div>
+    ${real?`<div class="sub" style="margin-top:6px">Gains déjà encaissés sur tes ventes : <b style="color:${real>=0?"var(--pos)":"var(--out)"}">${sg(real)}</b></div>`:""}
+    <div style="margin-top:10px">${T.sort((a,b)=>b.p.val-a.p.val).map(({t,p})=>row("",`<b data-btitre="${t.id}" style="cursor:pointer">${esc(t.nom)}${t.ticker?` <small style="color:var(--mut)">${esc(t.ticker)}</small>`:""}</b><small data-btitre="${t.id}" style="cursor:pointer">${p.q>0?qFmt(p.q)+" × "+eurT(p.prix):"vendu"} · ${p.manuel?"cours du "+(p.dateC?fmtD(p.dateC):"?"):"cours du "+fmtD(p.dateC)}</small>`,
+      `<div style="text-align:right;cursor:pointer" data-btitre="${t.id}"><b>${eur2(p.val)}</b><div style="font-size:12px;color:${p.gain>=0?"var(--pos)":"var(--out)"}">${p.q>0?sg(p.gain)+" ("+(p.pct>=0?"+":"")+p.pct.toFixed(1).replace(".",",")+" %)":""}</div></div>`,t.type==="crypto"?"🪙":t.type==="etf"?"📊":"🏢")).join("")}</div>`
+    :`<div class="empty">Note ce que tu achètes (ETF, actions, crypto) : je calcule ce que tu as investi et combien ça vaut aujourd'hui.</div>`)
+    +`<div class="two" style="margin-top:10px"><button type="button" class="btn sm" data-bop="">+ Achat / vente</button>${hasCrypto?`<button type="button" class="btn sec sm" data-bcrypto="1">↻ Cours crypto</button>`:""}</div>
+    ${T.some(x=>x.t.type!=="crypto"&&x.p.q>0)?`<p class="sub" style="margin-top:8px">Pour les actions et ETF, touche une ligne puis « Mettre à jour le cours » avec le prix affiché dans ton appli de bourse (en €).</p>`:""}`}
+function bourseOpForm(tid,sens){const B=S.bourse,t=B.titres.find(x=>x.id===tid);
+  openRaw(`<h3>${t?esc(t.nom):"Achat / vente"} <button class="del" type="button" data-close>×</button></h3>
+  <form id="fBourseOp">
+   ${t?`<input type="hidden" name="titre" value="${t.id}">`:`<label>Placement<select name="titre" id="bTitreSel"><option value="__new">➕ Nouveau placement</option>${B.titres.map(x=>`<option value="${x.id}">${esc(x.nom)}</option>`).join("")}</select></label>
+   <div id="bNew"><div class="two"><label>Type<select name="type" id="bType">${Object.entries(BTYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label><label>Code (facultatif)<input name="ticker" placeholder="ex. IWDA, AAPL"></label></div>
+    <label id="bNomL">Nom<input name="nom" placeholder="ex. iShares MSCI World"></label>
+    <label id="bCgL" hidden>Crypto<select name="cg">${CRYPTOS.map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></label></div>`}
+   <div class="two"><label>Opération<select name="sens"><option value="achat">Achat</option><option value="vente" ${sens==="vente"?"selected":""}>Vente</option></select></label><label>Date<input name="date" type="date" required value="${today()}"></label></div>
+   <div class="two"><label>Montant total (€)<input name="montant" type="number" step="0.01" inputmode="decimal" placeholder="ex. 100"></label><label>Prix d'une part (€)<input name="prix" type="number" step="any" inputmode="decimal" placeholder="ex. 98,40"></label></div>
+   <div class="two"><label>Nombre de parts<input name="qte" type="number" step="any" inputmode="decimal" placeholder="calculé si vide"></label><label>Frais (€)<input name="frais" type="number" step="0.01" inputmode="decimal" placeholder="0"></label></div>
+   <p class="sub">Remplis au moins deux des trois : montant, prix d'une part, nombre de parts. Le montant total inclut les frais.</p>
+   <button class="btn">Enregistrer</button></form>`);
+  const ty=$("bType");if(ty){const upd=()=>{const c=ty.value==="crypto";$("bCgL").hidden=!c;$("bNomL").hidden=c};ty.onchange=upd;upd();$("bTitreSel").onchange=()=>{$("bNew").hidden=$("bTitreSel").value!=="__new"}}}
+function bourseSaveOp(f){const d=Object.fromEntries(new FormData(f)),B=S.bourse;
+  const fr=Math.max(0,+String(d.frais||"").replace(",",".")||0);let mt=+String(d.montant||"").replace(",",".")||0,px=+String(d.prix||"").replace(",",".")||0,q=+String(d.qte||"").replace(",",".")||0;
+  if(!q&&mt&&px)q=(d.sens==="vente"?mt+fr:mt-fr)/px;else if(!px&&q&&mt)px=(d.sens==="vente"?mt+fr:mt-fr)/q;
+  if(!(q>0&&px>0)){toast("Indique au moins deux valeurs : montant, prix d'une part ou nombre de parts");return}
+  let tid=d.titre;
+  if(!tid||tid==="__new"){const cr=d.type==="crypto",lab=cr?(CRYPTOS.find(c=>c[0]===d.cg)||[d.cg,d.cg])[1]:String(d.nom||"").trim();if(!lab){toast("Donne un nom au placement");return}
+    const ex=B.titres.find(x=>cr?x.cg===d.cg:x.nom.toLowerCase()===lab.toLowerCase());
+    if(ex)tid=ex.id;else{tid=uid();B.titres.push({id:tid,nom:lab.slice(0,60),ticker:String(d.ticker||"").trim().toUpperCase().slice(0,15),type:d.type||"action",cg:cr?d.cg:""})}}
+  const t=B.titres.find(x=>x.id===tid);if(!t)return;
+  if(d.sens==="vente"){const p=boursePos(t);if(q>p.q+1e-9){toast(`Tu n'as que ${qFmt(p.q)} part(s) de ${t.nom}`);return}}
+  B.ops.push({id:uid(),titre:tid,date:d.date||today(),sens:d.sens==="vente"?"vente":"achat",qte:Math.round(q*1e8)/1e8,prix:Math.round(px*1e6)/1e6,frais:fr});
+  if(!B.cours[tid]||(B.cours[tid].date||"")<=(d.date||today()))B.cours[tid]={prix:Math.round(px*1e6)/1e6,date:d.date||today()};
+  closeSheet();save();toast(d.sens==="vente"?"Vente enregistrée ✓":"Achat enregistré ✓")}
+function bourseTitre(tid){const B=S.bourse,t=B.titres.find(x=>x.id===tid);if(!t)return;const p=boursePos(t);
+  const ops=B.ops.filter(o=>o.titre===tid).sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const ln=(a,b,c="")=>`<div class="ln"><span>${a}</span><b class="${c}" style="text-align:right">${b}</b></div>`;
+  openRaw(`<h3>${esc(t.nom)} <button class="del" type="button" data-close>×</button></h3><p class="sub">${BTYPES[t.type]||""}${t.ticker?" · "+esc(t.ticker):""}</p>
+   <div class="card" style="background:var(--card2);margin-top:10px">${ln("Parts",qFmt(p.q))}${ln("Investi (encore en portefeuille)",eur2(p.cout))}${ln("Cours",`${eurT(p.prix)} <small style="color:var(--mut);font-weight:600">${p.dateC?fmtD(p.dateC):""}</small>`)}${ln("Valeur actuelle",eur2(p.val))}${ln("Plus / moins-value",p.q>0?sg(p.gain)+" ("+(p.pct>=0?"+":"")+p.pct.toFixed(1).replace(".",",")+" %)":"—",p.gain>=0?"pos":"out")}${p.real?ln("Gains encaissés (ventes)",sg(p.real),p.real>=0?"pos":"out"):""}</div>
+   <div class="two" style="margin-top:12px">${t.type==="crypto"&&t.cg?`<button type="button" class="btn sec" data-bcrypto="1">↻ Cours en direct</button>`:`<button type="button" class="btn sec" data-bcours="${t.id}">✏️ Mettre à jour le cours</button>`}<button type="button" class="btn sec" data-bop="${t.id}">+ Achat / vente</button></div>
+   <div class="day" style="margin-top:14px;text-transform:none"><span>Opérations</span><span>${ops.length}</span></div><div class="card" style="background:var(--card2)">${ops.map(o=>row("",`<b>${o.sens==="vente"?"Vente":"Achat"} · ${qFmt(o.qte)} part(s)</b><small>${fmtD(o.date)} ${o.date?o.date.slice(0,4):""} · ${eurT(o.prix)} la part${+o.frais?" · frais "+eur2(o.frais):""}</small>`,`<span class="amt ${o.sens==="vente"?"pos":"out"}">${o.sens==="vente"?"+":"−"}${eur2(o.qte*o.prix+(o.sens==="vente"?-1:1)*(+o.frais||0))}</span><button class="del" type="button" data-bdelop="${o.id}" data-t="${t.id}">×</button>`,o.sens==="vente"?"💰":"🛒")).join("")}</div>`)}
+function bourseCoursForm(tid){const t=S.bourse.titres.find(x=>x.id===tid);if(!t)return;const p=boursePos(t);
+  openRaw(`<h3>Cours de ${esc(t.nom)} <button class="del" type="button" data-close>×</button></h3><form id="fBourseCours"><input type="hidden" name="titre" value="${t.id}">
+   <label>Prix d'une part aujourd'hui (€)<input name="prix" type="number" step="any" inputmode="decimal" required value="${p.prix||""}"></label>
+   <p class="sub">Regarde le prix dans ton appli de bourse${t.ticker?` (code ${esc(t.ticker)})`:""}, en euros.</p><button class="btn">Enregistrer</button></form>`)}
+function bourseSaveCours(f){const d=Object.fromEntries(new FormData(f)),px=+String(d.prix||"").replace(",",".");if(!(px>0)){toast("Prix invalide");return}
+  S.bourse.cours[d.titre]={prix:px,date:today()};save();bourseTitre(d.titre);toast("Cours mis à jour ✓")}
+async function bourseMajCrypto(){const ids=[...new Set(S.bourse.titres.filter(t=>t.type==="crypto"&&t.cg).map(t=>t.cg))];if(!ids.length)return;
+  toast("Récupération des cours…");
+  try{const r=await fetch("https://api.coingecko.com/api/v3/simple/price?vs_currencies=eur&ids="+encodeURIComponent(ids.join(",")));if(!r.ok)throw new Error(r.status);const j=await r.json();let n=0;
+    S.bourse.titres.forEach(t=>{const px=j[t.cg]&&+j[t.cg].eur;if(t.type==="crypto"&&px>0){S.bourse.cours[t.id]={prix:px,date:today()};n++}});
+    save();if($("sheetBg").classList.contains("open")){const open=S.bourse.titres.find(t=>$("sheet").innerHTML.includes(`data-bop="${t.id}"`));if(open)bourseTitre(open.id)}toast(n?`${n} cours crypto mis à jour ✓`:"Aucun cours trouvé")}
+  catch(e){console.warn(e);toast(navigator.onLine?"Service de cours indisponible, réessaie plus tard":"Pas de connexion internet")}}
 /* ---------- détail des chiffres de l'accueil (touche une carte) ---------- */
 function openStat(kind,c){
   const k=mkey(cur),M=monthData(k),mois=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"});
@@ -1622,6 +1691,8 @@ function showScan(r){
 document.addEventListener("submit",e=>{
   e.preventDefault();const f=e.target;
   if(f.id==="fFisc"){saveSituation(f);return}
+  if(f.id==="fBourseOp"){bourseSaveOp(f);return}
+  if(f.id==="fBourseCours"){bourseSaveCours(f);return}
   if(f.id==="fSet"){const R=S.reglages;R.epargne=+$("sEpargne").value||0;R.pct=+$("sPct").value||0;R.mois=+$("sMois").value||1;R.ratio=+$("sRatio").value||78;R.statut=$("sStatut").value;R.domicile=$("sDomicile").value.trim();R.conso=+$("sConso").value||6.5;R.carbu=+$("sCarbu").value||1.8;save();toast("Réglages enregistrés");return}
   const d=Object.fromEntries(new FormData(f));d.id=uid();
   const t=f.dataset.f;
@@ -1683,7 +1754,7 @@ document.addEventListener("submit",e=>{
 
 document.addEventListener("change",e=>{const k=e.target.dataset&&e.target.dataset.admin;if(!k)return;if(e.target.checked)S.adminDone[k]=1;else delete S.adminDone[k];save()});
 document.addEventListener("click",e=>{
-  const b=e.target.closest("button,[data-stat],[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day],[data-dups],[data-fisc]");
+  const b=e.target.closest("button,[data-stat],[data-btitre],[data-toggle],[data-ptoggle],[data-detail],[data-edit],[data-cat],[data-emo],[data-day],[data-dups],[data-fisc]");
   if(e.target===$("sheetBg")){closeSheet();return}
   if(!b)return;
   if(b.classList.contains("scanBtn")){const m=b.dataset.mode||"paie";const T={facture:"Scanner une facture / un ticket",contrat:"Scanner un contrat",paie:"Scanner une fiche de paie",f281:"Scanner une fiche fiscale 281.10"},F={facture:scanFacture,contrat:scanContrat,paie:scanFile,f281:scan281};pickSource(T[m]||T.paie,f=>(F[m]||scanFile)(f));return}
@@ -1703,6 +1774,11 @@ document.addEventListener("click",e=>{
   if(b.dataset.cat){document.querySelectorAll("#catChips button").forEach(x=>x.classList.toggle("on",x===b));$("catIn").value=b.dataset.cat;return}
   if(b.dataset.emo){document.querySelectorAll("#emoChips button").forEach(x=>x.classList.toggle("on",x===b));$("emoIn").value=b.dataset.emo;return}
   if(b.dataset.stat){openStat(b.dataset.stat,b.dataset.c);return}
+  if(b.dataset.bop!==undefined){bourseOpForm(b.dataset.bop,b.dataset.sens);return}
+  if(b.dataset.btitre){bourseTitre(b.dataset.btitre);return}
+  if(b.dataset.bcours){bourseCoursForm(b.dataset.bcours);return}
+  if(b.dataset.bdelop){const B=S.bourse;B.ops=B.ops.filter(o=>o.id!==b.dataset.bdelop);const t=b.dataset.t;if(!B.ops.some(o=>o.titre===t)){B.titres=B.titres.filter(x=>x.id!==t);delete B.cours[t];closeSheet()}else bourseTitre(t);save();toast("Opération supprimée");return}
+  if(b.dataset.bcrypto){bourseMajCrypto();return}
   if(b.dataset.edit&&b.tagName!=="BUTTON"){const[ty,id]=b.dataset.edit.split(":");const o=(S[COLL[ty]]||[]).find(x=>x.id===id);if(o)openSheet(ty,null,o);return}
   if(b.dataset.del2){const[k,id]=b.dataset.del2.split(":");
     if(b.dataset.confirm!=="1"){b.dataset.confirm="1";b.textContent="Appuie encore pour confirmer";setTimeout(()=>{if(b.isConnected){b.dataset.confirm="";b.textContent="Supprimer"}},3000);return}
