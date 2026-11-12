@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=30";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=30";
+import * as CFG from "./firebase-config.js?v=31";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=31";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=30;
+const APP_VERSION=31;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -213,7 +213,12 @@ function monthData(k){
   const d=all.filter(x=>!(x.fixe&&S.fixes.some(f=>f.id===x.fixe))); // une facture liée à une charge fixe (toujours existante) est déjà comptée dans les fixes
   const var_=d.reduce((a,x)=>a+(+x.montant||0),0);
   const autre=p.filter(x=>x.autre&&x.recu).reduce((a,x)=>a+(+x.montant||0),0);
-  return{p,pAll,arch,recu,att,autre,d,all,var_,fix:fixesTotal(),dep:var_+fixesTotal()};
+  // factures pas encore payées : comptées dans « dep » (engagements), mais pas encore sorties du compte
+  const nonPaye=all.filter(x=>x.paye===false);
+  const fixAPayer=S.fixes.filter(f=>nonPaye.some(x=>x.fixe===f.id)).reduce((a,f)=>a+(+f.montant||0),0);
+  const aPayer=nonPaye.filter(x=>!(x.fixe&&S.fixes.some(f=>f.id===x.fixe))).reduce((a,x)=>a+(+x.montant||0),0)+fixAPayer;
+  const dep=var_+fixesTotal();
+  return{p,pAll,arch,recu,att,autre,d,all,var_,fix:fixesTotal(),dep,aPayer,nAPayer:nonPaye.length,depPaye:dep-aPayer};
 }
 function missionPaid(m){return S.paies.filter(p=>p.mission===m.id&&p.recu&&!p.autre).reduce((a,p)=>a+(+p.montant||0),0)}
 function daysTo(s){return Math.ceil((new Date(s+"T23:59")-new Date())/864e5)}
@@ -245,15 +250,15 @@ function render(){
   $("bToday").hidden=isNow;$("bToday").textContent="↩ Revenir à "+new Date().toLocaleDateString("fr-BE",{month:"long"});
   $("resteCard").querySelector(".k").textContent=isNow?"Reste à vivre ce mois":"Bilan de "+cur.toLocaleDateString("fr-BE",{month:"long"});
   const M=monthData(k), R=S.reglages, fx=fixesTotal();
-  const reste=M.recu+M.att-M.dep;
+  const reste=M.recu+M.att-M.depPaye; // une dépense pas encore payée ne sort pas encore du compte
   $("reste").textContent=eur(reste);
   $("resteCard").classList.toggle("neg",reste<0);
-  $("resteSub").textContent=M.att>0?`dont ${eur(M.att)} de paies encore attendues`:"revenus − charges fixes − dépenses";
+  $("resteSub").textContent=[M.att>0?`dont ${eur(M.att)} de paies encore attendues`:"revenus − dépenses payées",M.aPayer>0?`${eur(M.aPayer)} à payer pas encore déduits`:""].filter(Boolean).join(" · ");
   $("recu").textContent=eur(M.recu);
   const nP=M.p.filter(x=>!x.autre).length;
   $("attendu").textContent=[M.autre>0?`dont ${eur(M.autre)} d'autres rentrées`:`${nP} paie(s)`,M.att>0?`+ ${eur(M.att)} attendus`:""].filter(Boolean).join(" · ");
-  $("dep").textContent=eur(M.dep);
-  $("depSub").textContent=`${eur(M.fix)} fixes · ${eur(M.var_)} variables`;
+  $("dep").textContent=eur(M.depPaye);
+  $("depSub").textContent=M.aPayer>0?`payé · + ${eur(M.aPayer)} à payer (${M.nAPayer} facture${M.nAPayer>1?"s":""})`:`${eur(M.fix)} fixes · ${eur(M.var_)} variables`;
 
   // budget par jour
   $("jourCard").hidden=!isNow||(M.recu+M.att===0&&M.dep===0);
@@ -952,7 +957,7 @@ async function bilanPDF(){
     const mois=cur.toLocaleDateString("fr-BE",{month:"long",year:"numeric"}),red=[239,35,60],W=210;
     docp.setFillColor(...red);docp.rect(0,0,W,30,"F");docp.setTextColor(255);docp.setFont("helvetica","bold");docp.setFontSize(20);docp.text("Budget Intérim",14,14);
     docp.setFontSize(12);docp.setFont("helvetica","normal");docp.text(pdfTxt("Bilan de "+mois),14,22);docp.text(pdfTxt(($("who").textContent||"").replace("Connecté : ","")),W-14,22,{align:"right"});
-    const {score}=calcScore(M,k),ep=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)),x=>x.montant),reste=M.recu+M.att-M.dep;
+    const {score}=calcScore(M,k),ep=sum(S.epargneLog.filter(x=>(x.date||"").startsWith(k)),x=>x.montant),reste=M.recu+M.att-M.depPaye;
     const tbl=(y,head,body,opt={})=>{docp.autoTable({startY:y,head:[head],body,theme:"grid",styles:{fontSize:9,cellPadding:2,textColor:30},headStyles:{fillColor:[24,24,28],textColor:255},alternateRowStyles:{fillColor:[247,247,248]},margin:{left:14,right:14},...opt});return docp.lastAutoTable.finalY+8};
     const h2=(y,t)=>{docp.setTextColor(...red);docp.setFont("helvetica","bold");docp.setFontSize(12);docp.text(pdfTxt(t),14,y);return y+3};
     let y=40;
