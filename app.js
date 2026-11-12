@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=35";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=35";
+import * as CFG from "./firebase-config.js?v=36";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=36";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=35;
+const APP_VERSION=36;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -37,6 +37,7 @@ const isDate=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s);
 function clean(arr,needDate=true){return (Array.isArray(arr)?arr:[]).filter(x=>x&&typeof x==="object").map(x=>{if(!x.id)x.id=uid();if(needDate&&!isDate(x.date))x.date=today();return x})}
 function normalize(d){d=d||{};const n=normalize0(d);["paies","depenses","pointage","epargneLog","cr","dettes"].forEach(k=>n[k]=clean(n[k]));["missions","fixes","objectifs","fiches281"].forEach(k=>n[k]=clean(n[k],false));
   if(!Array.isArray(n.defi))n.defi=[];if(!n.budgets||typeof n.budgets!=="object")n.budgets={};if(n.cats&&!Array.isArray(n.cats))n.cats=null;
+  n.paies.forEach(p=>reparerAnnee(p,n.missions));
   n.paies.forEach(p=>{if(p.detail&&Array.isArray(p.detail.jours)&&!p.archive){const h=heuresPayees({heures:p.detail.heures,jours:p.detail.jours}).heures;if(h&&h>(+p.heures||0)+0.25){p.heures=h;p.detail.heures=h}}}); // fiches déjà scannées : on rattrape les heures de récup payées
   return n}
 function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],fiches281:d.fiches281||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
@@ -1253,6 +1254,17 @@ function openSheet(type,ctx,item,opts={}){
   if(!ed)setTimeout(()=>$("sheet").querySelector("input:not([type=hidden])")?.focus(),80);
 }
 function closeSheet(){$("sheetBg").classList.remove("open");if(scanCtl){scanCtl.abort();scanCtl=null}}
+// paie déjà enregistrée avec une année mal lue : impossible si elle tombe bien avant le début de sa mission.
+// On remet la même date (jour/mois) dans l'année de la mission, si ça tombe entre le début de la mission et aujourd'hui.
+function reparerAnnee(p,missions){const m=missions.find(x=>x.id===p.mission);
+  if(!m||!/^\d{4}-\d{2}-\d{2}$/.test(m.debut||"")||!/^\d{4}-\d{2}-\d{2}$/.test(p.date||""))return;
+  const lim=new Date(m.debut+"T12:00");lim.setDate(lim.getDate()-31);if(new Date(p.date+"T12:00")>=lim)return;
+  const y0=+m.debut.slice(0,4),fin=new Date();fin.setDate(fin.getDate()+7);const dec=new Date(m.debut+"T12:00");dec.setDate(dec.getDate()-7);
+  for(const y of [y0,y0+1]){const c=y+p.date.slice(4),dc=new Date(c+"T12:00");if(dc>=dec&&dc<=fin){const dy=y-+p.date.slice(0,4);
+    const fx=d=>/^\d{4}-\d{2}-\d{2}$/.test(d||"")?(+d.slice(0,4)+dy)+d.slice(4):d;
+    if(p.detail){["periode_debut","periode_fin","date_paiement"].forEach(k=>{p.detail[k]=fx(p.detail[k])});if(Array.isArray(p.detail.jours))p.detail.jours.forEach(j=>{j.date=fx(j.date)})}
+    if(p.archive&&c.slice(0,7)>=mkey(new Date(Date.now()-40*864e5)))p.archive=false; // cochée « ancienne » seulement à cause de la mauvaise année
+    p.date=c;return}}}
 // l'IA lit parfois la bonne date avec la mauvaise année (ex. 10/11/2025 au lieu de 2026) : la paie part alors dans un vieux mois.
 // Si la même date dans l'année en cours tombe dans les 60 derniers jours (ou la semaine qui vient), on corrige.
 function corrigeAnnee(r){const t=new Date(),y=t.getFullYear();let lu=null;
