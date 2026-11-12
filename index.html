@@ -87,6 +87,7 @@ nav button.on{color:var(--acc);background:var(--card)}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--mut);margin-top:8px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .cat{display:flex;justify-content:space-between;font-size:13px;margin-top:8px}
+body.discret .bx-m{filter:blur(8px)}
 #resteCard>.k::after,.card.mini[data-stat]>.k::after{content:" ›";opacity:.6}
 [data-stat]:active{transform:scale(.985)}
 .est{background:var(--card2);border-radius:12px;padding:12px;font-size:13px;color:var(--mut)}
@@ -402,6 +403,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 
     <div id="alerts"></div>
 
+    <div class="card" id="bourseHome" hidden data-bx="go" style="cursor:pointer"></div>
     <div class="card" id="weekCard" hidden data-stat="week" style="cursor:pointer">
       <div class="k">📅 Ta semaine <span style="float:right;color:var(--mut)">›</span></div>
       <div id="weekBody"></div>
@@ -476,6 +478,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
   <!-- OUTILS -->
   <section class="view" id="v-outils">
     <div class="tools">
+      <button type="button" data-bx="go"><span>📈</span>Bourse & crypto</button>
       <button type="button" id="bReleve"><span>🏦</span>Relevé bancaire</button>
       <button type="button" id="bMulti"><span>🧾</span>Plusieurs tickets</button>
       <button type="button" data-acc="ia"><span>🤖</span>Assistant</button>
@@ -511,8 +514,6 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
       <div class="card"><div class="acc-act"><button class="btn sec sm" data-open="dette">+ Ajouter</button></div><div id="dettes"></div></div></details>
     <details class="acc" id="acc-defi"><summary><span class="si">💪</span><span>Défi 52 semaines<span class="st" id="st-defi"></span></span></summary>
       <div class="card"><div id="defi"></div></div></details>
-    <details class="acc" id="acc-bourse"><summary><span class="si">📈</span><span>Bourse & crypto<span class="st" id="st-bourse"></span></span></summary>
-      <div class="card"><div id="bourseCard"></div></div></details>
   </section>
 
   <!-- STATS -->
@@ -570,6 +571,7 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
   </section>
 
   <!-- REGLAGES -->
+  <section class="view" id="v-bourse"><div id="bourseView"></div></section>
   <section class="view" id="v-set">
     <h2>Réglages</h2>
     <div class="card">
@@ -650,6 +652,6 @@ body.discret .day span:last-child,body.discret .ctrl-i small,body.discret #agTxt
 <input type="file" id="pickIn" accept="image/*" hidden>
 <div id="viewer"><button id="viewerClose" aria-label="Fermer">×</button><div id="viewerBody"></div></div>
 
-<script type="module" src="app.js?v=41"></script>
+<script type="module" src="app.js?v=42"></script>
 </body>
 </html>
