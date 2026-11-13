@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=44";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=44";
+import * as CFG from "./firebase-config.js?v=45";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=45";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=44;
+const APP_VERSION=45;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -40,7 +40,7 @@ function normalize(d){d=d||{};const n=normalize0(d);["paies","depenses","pointag
   n.paies.forEach(p=>reparerAnnee(p,n.missions));
   n.paies.forEach(p=>{if(p.detail&&Array.isArray(p.detail.jours)&&!p.archive){const h=heuresPayees({heures:p.detail.heures,jours:p.detail.jours}).heures;if(h&&h>(+p.heures||0)+0.25){p.heures=h;p.detail.heures=h}}}); // fiches déjà scannées : on rattrape les heures de récup payées
   return n}
-function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],fiches281:d.fiches281||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],bourse:Object.assign({titres:[],ops:[],cours:{},hist:{},plans:[],planFait:{},reglages:{},tobPaye:{}},d.bourse||{}),reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
+function normalize0(d){return{missions:d.missions||[],paies:d.paies||[],depenses:d.depenses||[],fixes:d.fixes||[],objectifs:d.objectifs||[],budgets:d.budgets||{},epargneLog:d.epargneLog||[],pointage:d.pointage||[],cr:d.cr||[],dettes:d.dettes||[],fiches281:d.fiches281||[],defi:d.defi||[],cats:d.cats||null,adminDone:d.adminDone||{},subsIgnore:d.subsIgnore||[],bourse:bourseNorm(d.bourse),reglages:Object.assign({},DEF.reglages,d.reglages||{})}}
 const configured=firebaseConfig.apiKey&&firebaseConfig.apiKey!=="A_REMPLACER";
 const app=configured?initializeApp(firebaseConfig):null;
 const auth=app?getAuth(app):null;
@@ -65,8 +65,11 @@ function save(){
   const payload=JSON.parse(json);payload._rev=rev;payload._at=Date.now();
   if(!pendingSince)pendingSince=Date.now();
   const myDoc=fsDoc;
-  setDoc(myDoc,payload).then(()=>{if(myDoc!==fsDoc)return;ackRev=Math.max(ackRev,rev);if(ackRev>=localRev){pendingSince=0;if(syncPb==="pending"||syncPb==="write"){syncPb=null;render()}}planVerif()})
-    .catch(e=>{console.error(e);syncPb="write";syncPbCode=e.code||e.message||"erreur";setSync("⚠ Erreur de sauvegarde");render()});
+  // garde-fou : une donnée refusée par Firestore (liste dans une liste…) lève une erreur tout de suite, on l'affiche au lieu de la perdre en silence
+  const imbr=v=>Array.isArray(v)?v.some(x=>Array.isArray(x)||imbr(x)):v&&typeof v==="object"?Object.values(v).some(imbr):false;
+  if(imbr(payload)){console.error("données non sauvegardables (liste dans une liste)");syncPb="write";syncPbCode="liste imbriquée";setSync("⚠ Erreur de sauvegarde");render();return}
+  try{setDoc(myDoc,payload).then(()=>{if(myDoc!==fsDoc)return;ackRev=Math.max(ackRev,rev);if(ackRev>=localRev){pendingSince=0;if(syncPb==="pending"||syncPb==="write"){syncPb=null;render()}}planVerif()})
+    .catch(e=>{console.error(e);syncPb="write";syncPbCode=e.code||e.message||"erreur";setSync("⚠ Erreur de sauvegarde");render()})}catch(e){console.error(e);syncPb="write";syncPbCode=e.code||e.message||"erreur";setSync("⚠ Erreur de sauvegarde");render()}
 }
 /* ---------- protections anti-perte ---------- */
 let localRev=0,srvRev=0,ackRev=0,pendingSince=0,syncPb=null,syncPbCode="",verifT=null,videServeur=false;
@@ -1315,16 +1318,23 @@ const moisL=k=>new Date(k+"-15T12:00").toLocaleDateString("fr-BE",{month:"long",
 const ageCours=d=>{if(!d)return"jamais";const n=Math.round((new Date(today()+"T12:00")-new Date(d+"T12:00"))/864e5);return n<=0?"aujourd'hui":n===1?"hier":`il y a ${n} j`};
 
 /* ---------- cours et historique ---------- */
+// Firestore refuse les listes dans des listes : l'historique est stocké en objet {"YYYY-MM-DD":prix}
+function bourseNorm(b){const B=Object.assign({titres:[],ops:[],cours:{},hist:{},plans:[],planFait:{},reglages:{},tobPaye:{}},b||{});const H={};
+  Object.entries(B.hist||{}).forEach(([k,v])=>{const m={};if(Array.isArray(v))v.forEach(x=>{if(Array.isArray(x)&&x[0]&&+x[1]>0)m[x[0]]=+x[1];else if(x&&x.d&&+x.p>0)m[x.d]=+x.p});else if(v&&typeof v==="object")Object.entries(v).forEach(([d,p])=>{if(/^\d{4}-\d{2}-\d{2}$/.test(d)&&+p>0)m[d]=+p});H[k]=m});
+  B.hist=H;histCache={};return B}
+let histCache={};
+// historique trié [[date,prix],…] (mis en cache, recalculé quand il change)
+function histL(tid){const m=S.bourse.hist[tid]||{},n=Object.keys(m).length,c=histCache[tid];if(c&&c.m===m&&c.n===n&&c.v===c.m.__v)return c.a;
+  const a=Object.entries(m).filter(([d])=>d!=="__v").sort((x,y)=>x[0]<y[0]?-1:x[0]>y[0]?1:0).map(([d,p])=>[d,+p]);histCache[tid]={m,n,v:m.__v,a};return a}
 function compactHist(h){const lim=iso(new Date(Date.now()-120*864e5)),wk={};
   h.filter(x=>x[0]<lim).forEach(x=>{const d=new Date(x[0]+"T12:00");wk[d.getFullYear()+"-"+Math.floor((d-new Date(d.getFullYear(),0,1))/6048e5)]=x});
   return Object.values(wk).concat(h.filter(x=>x[0]>=lim)).slice(-420)}
 function setCours(tid,prix,date,src){const B=S.bourse;prix=Math.round(prix*1e8)/1e8;if(!(prix>0)||!isFinite(prix))return;date=date&&date<=today()?date:today();
   const c=B.cours[tid];if(!c||(c.date||"")<=date)B.cours[tid]={prix,date,src:src||"",ts:Date.now()};
-  const h=B.hist[tid]=Array.isArray(B.hist[tid])?B.hist[tid]:[];const i=h.findIndex(x=>x[0]===date);
-  if(i>=0)h[i][1]=prix;else{h.push([date,prix]);h.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0)}
-  if(h.length>420)B.hist[tid]=compactHist(h)}
+  const m=B.hist[tid]=B.hist[tid]&&typeof B.hist[tid]==="object"&&!Array.isArray(B.hist[tid])?B.hist[tid]:{};m[date]=prix;delete histCache[tid];
+  if(Object.keys(m).length>420){const c={};compactHist(histL(tid)).forEach(([d,p])=>c[d]=p);B.hist[tid]=c;delete histCache[tid]}}
 const opsDe=tid=>S.bourse.ops.filter(o=>o.titre===tid).sort((a,b)=>(a.date||"").localeCompare(b.date||"")||(a.ts||0)-(b.ts||0));
-function prixA(tid,date){const h=S.bourse.hist[tid]||[];let best=null;for(const x of h){if(x[0]<=date)best=x;else break}
+function prixA(tid,date){const h=histL(tid);let best=null;for(const x of h){if(x[0]<=date)best=x;else break}
   for(const o of opsDe(tid))if(o.sens!=="dividende"&&o.date<=date&&+o.prix>0&&(!best||o.date>best[0]))best=[o.date,+o.prix];
   {const c=S.bourse.cours[tid];if(c&&+c.prix>0&&c.date&&c.date<=date&&(!best||c.date>best[0]))best=[c.date,+c.prix]}
   if(!best){const c=S.bourse.cours[tid];if(c&&+c.prix>0)best=[c.date||date,+c.prix];else{const o=opsDe(tid).find(o=>+o.prix>0);if(o)best=[o.date,+o.prix]}}
@@ -1351,7 +1361,7 @@ function xirr(fl){if(fl.length<2||!fl.some(f=>f[1]<0)||!fl.some(f=>f[1]>0))retur
 // courbe : valeur du portefeuille et montant investi dans le temps
 function bourseSerie(debut){const B=S.bourse,ops=B.ops.filter(o=>o.date&&o.sens!=="dividende");if(!ops.length)return[];
   const t=today(),d0=ops.map(o=>o.date).sort()[0],veille=iso(new Date(new Date(d0+"T12:00")-864e5)),from=debut&&debut>d0?debut:veille,ds=new Set([from,t]);
-  ops.forEach(o=>{if(o.date>=from)ds.add(o.date)});Object.values(B.hist).forEach(h=>(h||[]).forEach(x=>{if(x[0]>=from&&x[0]<=t)ds.add(x[0])}));
+  ops.forEach(o=>{if(o.date>=from)ds.add(o.date)});Object.keys(B.hist).forEach(k=>histL(k).forEach(x=>{if(x[0]>=from&&x[0]<=t)ds.add(x[0])}));
   let dates=[...ds].sort();if(dates.length>160){const keep=new Set(ops.map(o=>o.date).concat([from,t])),st=Math.ceil(dates.length/140);dates=dates.filter((d,i)=>keep.has(d)||i%st===0)}
   return dates.map(d=>{let v=0,c=0;B.titres.forEach(ti=>{const p=boursePos(ti,d);v+=p.val;c+=p.cout});return[d,v,c]})}
 function perfPeriode(debut){const ser=bourseSerie(debut);if(ser.length<2)return null;const a=ser[0],z=ser[ser.length-1];
@@ -1468,7 +1478,7 @@ function bourseAlertes(t){const B=S.bourse,A=[],k=t.slice(0,7),j=+t.slice(8);if(
 
 /* ---------- fiche d'un placement ---------- */
 function bourseTitre(tid){const B=S.bourse,t=B.titres.find(x=>x.id===tid);if(!t)return;const p=boursePos(t),P=portefeuille(),w=P.val>0?p.val/P.val*100:0;
-  const h=(B.hist[tid]||[]).slice();opsDe(tid).forEach(o=>{if(o.sens!=="dividende"&&+o.prix>0&&!h.some(x=>x[0]===o.date))h.push([o.date,+o.prix])});h.sort((a,b)=>a[0].localeCompare(b[0]));
+  const h=histL(tid).slice();opsDe(tid).forEach(o=>{if(o.sens!=="dividende"&&+o.prix>0&&!h.some(x=>x[0]===o.date))h.push([o.date,+o.prix])});h.sort((a,b)=>a[0].localeCompare(b[0]));
   const ops=opsDe(tid).reverse(),ln=(a,b,c="")=>`<div class="ln"><span>${a}</span><b class="amt" style="text-align:right;${c?"color:"+c:""}">${b}</b></div>`;
   const var1=h.length>1?(h[h.length-1][1]/h[h.length-2][1]-1)*100:null;
   openRaw(`<h3>${BICO[t.type]||""} ${esc(t.nom)} <button class="del" type="button" data-close>×</button></h3>
