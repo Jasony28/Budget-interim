@@ -3,12 +3,12 @@ import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signI
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, getDocFromServer, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app-check.js";
 import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-ai.js";
-import * as CFG from "./firebase-config.js?v=45";
-import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=45";
+import * as CFG from "./firebase-config.js?v=46";
+import { nrm, sum, bilanFiscal as bilanAnnee, chargeParents, verifOnss, primeFinAnnee, peculeOuvrier } from "./calculs.js?v=46";
 const { firebaseConfig, recaptchaEnterpriseSiteKey, recaptchaV3SiteKey, geminiModel } = CFG;
 const geminiFallbacks = CFG.geminiFallbacks || ["gemini-3.5-flash-lite","gemini-3.1-flash-lite"];
 
-const APP_VERSION=45;
+const APP_VERSION=46;
 // écran de démarrage : visible au moins 1,3 s, retiré quand les données sont prêtes (6 s max)
 const SPLASH_T0=performance.now();let splashGone=false;
 function hideSplash(){if(splashGone)return;splashGone=true;const el=document.getElementById("splash");if(!el)return;
@@ -1773,6 +1773,11 @@ function initAI(){
   }catch(e){console.warn("IA indisponible",e);canImg=false}
   document.querySelectorAll(".scanBtn").forEach(b=>b.hidden=!canImg);$("bHisto").hidden=!canImg;
 }
+// vrai type d'un fichier d'après ses premiers octets (un PDF reçu sans « .pdf » dans son nom arrive sans type sur Android)
+function typeFichier(u,file){const h=(...b)=>b.every((x,i)=>u[i]===x),txt=String.fromCharCode(...u.subarray(0,12));
+  if(txt.startsWith("%PDF"))return"application/pdf";if(h(0xFF,0xD8,0xFF))return"image/jpeg";if(h(0x89,0x50,0x4E,0x47))return"image/png";
+  if(txt.startsWith("RIFF")&&txt.slice(8,12)==="WEBP")return"image/webp";if(/ftyp(heic|heix|mif1|hevc)/.test(txt.slice(4)))return"image/heic";
+  const t=file.type||"";return t&&t!=="application/octet-stream"?t:/\.pdf$/i.test(file.name||"")?"application/pdf":"image/jpeg"}
 async function toJpegB64(file){
   try{
     const bmp=await createImageBitmap(file);
@@ -1783,7 +1788,7 @@ async function toJpegB64(file){
   }catch(e){
     const buf=await file.arrayBuffer();let bin="";const u=new Uint8Array(buf);
     for(let i=0;i<u.length;i+=32768)bin+=String.fromCharCode.apply(null,u.subarray(i,i+32768));
-    return{data:btoa(bin),mimeType:file.type||"image/jpeg"};
+    return{data:btoa(bin),mimeType:typeFichier(u,file)};
   }
 }
 function parseJSON(t){
